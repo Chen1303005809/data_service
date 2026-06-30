@@ -11,12 +11,48 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def sample_df() -> pd.DataFrame:
-    """构造测试用 DataFrame（含期权和期货）。"""
+    """构造测试用 DataFrame（含期权和期货，新字段结构）。"""
     return pd.DataFrame(
         [
-            {"code": "IO2409-C-4000", "underlying": "IO", "product_type": "option", "type": "C", "strike": 4000.0, "expiry": "2024-09-27", "last_price": 200.0, "change": 5.0, "volume": 10000},
-            {"code": "IO2409-P-4000", "underlying": "IO", "product_type": "option", "type": "P", "strike": 4000.0, "expiry": "2024-09-27", "last_price": 80.0, "change": -1.0, "volume": 6000},
-            {"code": "IF2409", "underlying": "IF", "product_type": "future", "type": "", "strike": 0.0, "expiry": "2024-09-20", "last_price": 3500.0, "change": 20.0, "volume": 50000},
+            {
+                "code": "IO2409-C-4000", "underlying": "IO", "product_type": "option",
+                "type": "C", "strike": 4000.0, "expiry": "2024-09-27",
+                "last_price": 200.0, "change": 5.0, "volume": 10000,
+                "list_date": "", "underlying_name": "", "exchange": "",
+                "contract_multiplier": 1, "tick_size": 0.0, "main_flag": 0,
+                "open": 0.0, "high": 0.0, "low": 0.0, "pre_close": 0.0,
+                "pre_settle": 0.0, "settle": 0.0, "avg_price": 0.0,
+                "upper_limit": 0.0, "lower_limit": 0.0, "turnover": 0.0,
+                "open_interest": 0, "pre_open_interest": 0,
+                "bid1_price": 0.0, "bid1_volume": 0, "ask1_price": 0.0, "ask1_volume": 0,
+                "trade_date": "", "update_time": "", "fetched_at": "",
+            },
+            {
+                "code": "IO2409-P-4000", "underlying": "IO", "product_type": "option",
+                "type": "P", "strike": 4000.0, "expiry": "2024-09-27",
+                "last_price": 80.0, "change": -1.0, "volume": 6000,
+                "list_date": "", "underlying_name": "", "exchange": "",
+                "contract_multiplier": 1, "tick_size": 0.0, "main_flag": 0,
+                "open": 0.0, "high": 0.0, "low": 0.0, "pre_close": 0.0,
+                "pre_settle": 0.0, "settle": 0.0, "avg_price": 0.0,
+                "upper_limit": 0.0, "lower_limit": 0.0, "turnover": 0.0,
+                "open_interest": 0, "pre_open_interest": 0,
+                "bid1_price": 0.0, "bid1_volume": 0, "ask1_price": 0.0, "ask1_volume": 0,
+                "trade_date": "", "update_time": "", "fetched_at": "",
+            },
+            {
+                "code": "IF2409", "underlying": "IF", "product_type": "future",
+                "type": "", "strike": 0.0, "expiry": "2024-09-20",
+                "last_price": 3500.0, "change": 20.0, "volume": 50000,
+                "list_date": "", "underlying_name": "", "exchange": "",
+                "contract_multiplier": 1, "tick_size": 0.0, "main_flag": 0,
+                "open": 0.0, "high": 0.0, "low": 0.0, "pre_close": 0.0,
+                "pre_settle": 0.0, "settle": 0.0, "avg_price": 0.0,
+                "upper_limit": 0.0, "lower_limit": 0.0, "turnover": 0.0,
+                "open_interest": 0, "pre_open_interest": 0,
+                "bid1_price": 0.0, "bid1_volume": 0, "ask1_price": 0.0, "ask1_volume": 0,
+                "trade_date": "", "update_time": "", "fetched_at": "",
+            },
         ]
     )
 
@@ -37,75 +73,89 @@ def client(sample_df):
         yield client
 
 
-class TestOptionsEndpoint:
-    """测试 GET /api/options。"""
+class TestContractsEndpoint:
+    """测试 GET /api/contracts。"""
 
-    def test_get_all_options(self, client):
-        resp = client.get("/api/options")
+    def test_get_all_contracts(self, client):
+        resp = client.get("/api/contracts")
         assert resp.status_code == 200
         data = resp.json()
-        # 只返回期权，期货被 product_type 过滤
-        assert data["total"] == 2
-        assert all(item["product_type"] == "option" for item in data["items"])
+        assert data["total"] == 3
 
-    def test_filter_by_type(self, client):
-        resp = client.get("/api/options?type=C")
+    def test_filter_by_product_type_option(self, client):
+        resp = client.get("/api/contracts?product_type=option")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert all(item["ins"]["product_type"] == "option" for item in data["items"])
+
+    def test_filter_by_product_type_future(self, client):
+        resp = client.get("/api/contracts?product_type=future")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
-        assert data["items"][0]["type"] == "C"
+        assert data["items"][0]["ins"]["product_type"] == "future"
+        assert data["items"][0]["ins"]["code"] == "IF2409"
+
+    def test_filter_by_option_type(self, client):
+        resp = client.get("/api/contracts?option_type=C")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["ins"]["option_type"] == "C"
+
+    def test_filter_by_underlying(self, client):
+        resp = client.get("/api/contracts?underlying=IF")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["ins"]["underlying"] == "IF"
 
     def test_pagination(self, client):
-        resp = client.get("/api/options?limit=1&offset=1")
+        resp = client.get("/api/contracts?limit=1&offset=1")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
 
     def test_filter_by_multi_code(self, client):
-        """多 code 查询：OR 逻辑，通过 ?code=A&code=B 传参。"""
-        resp = client.get("/api/options?code=IO2409-C&code=IF2409")
+        """多 code 查询：OR 逻辑。"""
+        resp = client.get("/api/contracts?code=IO2409-C&code=IF2409")
         assert resp.status_code == 200
         data = resp.json()
-        # sample_df 中仅1条期权含 IO2409-C；IF2409 是期货被 product_type 过滤
-        assert data["total"] == 1
+        assert data["total"] == 2  # 1 IO2409-C-4000 + 1 IF2409
 
-    def test_single_code_still_works(self, client):
-        """单个 code 向后兼容，自动解析为列表。"""
-        resp = client.get("/api/options?code=IO2409-C")
-        assert resp.status_code == 200
-        data = resp.json()
-        # sample_df 中仅1条 IO2409-C 期权
-        assert data["total"] == 1
-        assert all("IO2409-C" in item["code"] for item in data["items"])
-
-    def test_invalid_type(self, client):
-        resp = client.get("/api/options?type=X")
+    def test_invalid_option_type(self, client):
+        resp = client.get("/api/contracts?option_type=X")
         assert resp.status_code == 422
 
+    def test_503_when_no_data(self, client, sample_df):
+        """缓存空 + 实时拉取失败 → 503。"""
+        with patch("cache.redis_client.cache_client.get_df", new_callable=AsyncMock, return_value=None), \
+             patch("syncer.sync.fetch_data", new_callable=AsyncMock, return_value=None):
+            # 清空缓存
+            from cache.redis_client import cache_client
+            cache_client._local_df = None
+            resp = client.get("/api/contracts")
+            assert resp.status_code == 503
+            assert "unavailable" in resp.json()["detail"].lower()
 
-class TestFuturesEndpoint:
-    """测试 GET /api/futures。"""
-
-    def test_get_all_futures(self, client):
-        resp = client.get("/api/futures")
+    def test_nested_response_structure(self, client):
+        """验证响应结构为 ins + price 嵌套。"""
+        resp = client.get("/api/contracts")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["total"] == 1
-        assert data["items"][0]["product_type"] == "future"
-        assert data["items"][0]["code"] == "IF2409"
+        item = data["items"][0]
+        assert "ins" in item
+        assert "price" in item
+        assert item["ins"]["code"] is not None
+        assert item["price"]["last_price"] is not None
 
-    def test_filter_by_underlying(self, client):
-        resp = client.get("/api/futures?underlying=IF")
+    def test_nested_option_type_field(self, client):
+        """验证 option_type 在 ins.option_type 下。"""
+        resp = client.get("/api/contracts?product_type=option&option_type=C")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["total"] == 1
-
-    def test_futures_no_callput(self, client):
-        """期货端点无 type 参数，?type=C 被忽略，返回全部期货。"""
-        resp = client.get("/api/futures?type=C")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == 1
+        assert data["items"][0]["ins"]["option_type"] == "C"
 
 
 class TestHealth:
