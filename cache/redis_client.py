@@ -98,15 +98,15 @@ class CacheClient:
 
         使用临时 key + RENAME 保证原子替换。
         """
-        now = datetime.now(timezone.utc)
-        payload = df.to_msgpack()
-
-        # 更新本地缓存（始终成功）
-        self._local_df = df.copy()
-        self._local_cached_at = now
-
-        # 写入 Redis
         if self._redis:
+            now = datetime.now(timezone.utc)
+            payload = df.to_msgpack()
+
+            # 更新本地缓存（始终成功）
+            self._local_df = df.copy()
+            self._local_cached_at = now
+
+            # 写入 Redis 
             try:
                 temp_key = f"{TEMP_KEY_PREFIX}{int(now.timestamp())}"
                 await self._redis.set(temp_key, payload, ex=config.cache_ttl_seconds)
