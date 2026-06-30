@@ -14,19 +14,37 @@ logger = logging.getLogger(__name__)
 
 
 async def query(params: QueryParams, product_type: ProductType | None = None) -> QueryResponse:
-    """执行查询：从缓存获取数据 → 过滤 → 排序 → 分页 → 返回响应。
+    """执行查询：缓存优先 → 实时兜底 → 过滤 → 排序 → 分页 → 返回响应。
 
-    Args:
-        params: 用户查询参数
-        product_type: 可选的产品类型过滤（option/future），由路由层传入
+    1. 优先从 Redis / 本地缓存读取 DataFrame
+    2. 缓存不可用或为空时，实时拉取外部 API 兜底，拉取成功后回写缓存
+    3. 对数据进行筛选、排序、分页
+    4. 返回 QueryResponse
     """
     df = await cache_client.get_df()
+    stale = await cache_client.is_stale() or False
+    cached_at = await cache_client.get_cached_at() or datetime.now(timezone.utc)
+
+    # --- 兜底：缓存不可用时实时拉取 ---
+    if df is None or df.empty:
+        logger.warning("Cache miss or empty, falling back to live fetch")
+        from syncer.sync import fetch_data
+        df = await fetch_data()
+
+        if df is not None and not df.empty:
+            # 回写缓存（至少写本地），让后续请求受益
+            await cache_client.set_df(df)
+            cached_at = datetime.now(timezone.utc)
+            stale = False
+            logger.info("Live fetch succeeded, wrote %d records to cache", len(df))
+
+    # --- 最终仍无数据 ---
     if df is None or df.empty:
         return QueryResponse(
             total=0,
             limit=params.limit,
             offset=params.offset,
-            cached_at=datetime.now(timezone.utc),
+            cached_at=cached_at,
             stale=True,
             items=[],
         )
@@ -39,9 +57,6 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
 
     # 通用过滤
     df = _apply_filters(df, params)
-
-    cached_at = await cache_client.get_cached_at() or datetime.now(timezone.utc)
-    stale = await cache_client.is_stale() or False
 
     total = len(df)
 

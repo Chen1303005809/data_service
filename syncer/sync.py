@@ -32,13 +32,12 @@ from config import config
 logger = logging.getLogger(__name__)
 
 
-async def fetch_and_sync() -> int:
-    """拉取 /ins 和 /price，合并为统一 DataFrame 并写入缓存。
+async def fetch_data() -> pd.DataFrame | None:
+    """实时拉取 /ins 和 /price 并合并为 DataFrame（不写缓存）。
 
-    Returns:
-        合并后的记录数。失败时返回 -1。
+    供缓存不可用时的兜底调用，也供 fetch_and_sync 复用。
     """
-    logger.info("Fetching data from external APIs...")
+    logger.info("Live-fetching data from external APIs...")
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             ins_resp, price_resp = await asyncio_compat_gather(
@@ -53,17 +52,31 @@ async def fetch_and_sync() -> int:
         price_data = price_resp.json()
 
         df = _merge(ins_data, price_data)
-
-        await cache_client.set_df(df)
-        logger.info("Synced %d records to cache", len(df))
-        return len(df)
+        logger.info("Live-fetched %d records", len(df))
+        return df
 
     except httpx.HTTPError as e:
         logger.error("HTTP error fetching external API: %s", e)
-        return -1
+        return None
     except Exception:
-        logger.exception("Unexpected error during sync")
+        logger.exception("Unexpected error during live fetch")
+        return None
+
+
+async def fetch_and_sync() -> int:
+    """拉取 /ins 和 /price，合并为统一 DataFrame 并写入缓存。
+
+    Returns:
+        合并后的记录数。失败时返回 -1。
+    """
+    df = await fetch_data()
+    if df is None or df.empty:
+        logger.warning("fetch_and_sync: no data to cache")
         return -1
+
+    await cache_client.set_df(df)
+    logger.info("Synced %d records to cache", len(df))
+    return len(df)
 
 
 # --- 辅助函数 ---
