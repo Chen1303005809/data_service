@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  # ============================================================
+  # 合约数据服务
+  # ============================================================
+  data_service:
+    build: .
+    container_name: data_service
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-9617}:8000"
+    env_file:
+      - .env
+    environment:
+      # 覆盖 Redis 地址为容器内服务名
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # 可选：挂载日志目录
+      - ./logs:/app/logs
+    networks:
+      - data_network
+
+  # ============================================================
+  # Redis 缓存
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: data_service_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-9616}:6379"
+    volumes:
+      - ./redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - data_network
+
+# ============================================================
+# 网络
+# ============================================================
+networks:
+  data_network:
+    driver: bridge
