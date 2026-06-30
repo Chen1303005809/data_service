@@ -1,6 +1,7 @@
 """Redis 客户端封装：DataFrame 的存储与读取。"""
 
 from __future__ import annotations
+from io import BytesIO
 
 import logging
 from datetime import datetime, timezone
@@ -57,7 +58,7 @@ class CacheClient:
             try:
                 data = await self._redis.get(CACHE_KEY_LATEST)
                 if data:
-                    return pd.read_msgpack(data)
+                    return pd.read_parquet(BytesIO(data))
             except Exception:
                 logger.exception("Failed to read from Redis, falling back to local")
 
@@ -100,7 +101,8 @@ class CacheClient:
         """
         if self._redis:
             now = datetime.now(timezone.utc)
-            payload = df.to_msgpack()
+            buf = BytesIO()
+            df.to_parquet(buf, index=False)
 
             # 更新本地缓存（始终成功）
             self._local_df = df.copy()
@@ -109,7 +111,7 @@ class CacheClient:
             # 写入 Redis 
             try:
                 temp_key = f"{TEMP_KEY_PREFIX}{int(now.timestamp())}"
-                await self._redis.set(temp_key, payload, ex=config.cache_ttl_seconds)
+                await self._redis.set(temp_key, buf.getvalue(), ex=config.cache_ttl_seconds)
                 await self._redis.rename(temp_key, CACHE_KEY_LATEST)
                 logger.info("Cache refreshed: %d rows, TTL=%ds", len(df), config.cache_ttl_seconds)
             except Exception:
