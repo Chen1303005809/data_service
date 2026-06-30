@@ -1,4 +1,4 @@
-"""数据同步器：从外部 API 双路由拉取并合并合约数据。
+"""数据同步器：从外部 API 拉取并合并合约数据。
 
 外部 API 实际返回格式（以 data_example/ 中的样例为准）：
 
@@ -28,6 +28,8 @@ import pandas as pd
 
 from cache.redis_client import cache_client
 from config import config
+from syncer.parser.ins_parser import parse_ins
+from syncer.parser.price_parser import get_main_flags, parse_price, reset_main_flags
 
 logger = logging.getLogger(__name__)
 
@@ -88,183 +90,103 @@ async def asyncio_compat_gather(*coros):
     return await asyncio.gather(*coros)
 
 
-def _parse_ins(ins_data: dict) -> list[dict]:
-    """解析 /ins 返回的嵌套字典结构为合约列表。
-
-    ins_data 结构:
-        {品种代码: {"pi": {品种信息}, "ins": {合约代码: {合约信息}}}}
-
-    每个合约转换为:
-        {code, underlying, product_type, expiry, list_date, type, strike}
-
-    产品类型由品种级 pi.pt 决定（1=期货, 2=期权, 6=个股期权）。
-    """
-    records: list[dict] = []
-    for product_code, product_data in ins_data.items():
-        if not isinstance(product_data, dict):
-            continue
-
-        pi = product_data.get("pi", {})
-        ins_dict = product_data.get("ins", {})
-
-        pt = pi.get("pt", 0)
-        product_type = _map_product_type(pt)
-
-        for ins_code, ins_info in ins_dict.items():
-            if not isinstance(ins_info, dict):
-                continue
-
-            # 过期日格式化：20261021 → "2026-10-21"
-            raw_expiry = ins_info.get("E", "")
-            expiry = _format_date(raw_expiry)
-
-            # 上市日
-            raw_list_date = ins_info.get("O", "")
-            list_date = _format_date(raw_list_date)
-
-            record = {
-                "code": str(ins_info.get("i", ins_code)),
-                "underlying": str(ins_info.get("p", product_code)),
-                "product_type": product_type,
-                "expiry": expiry,
-                "list_date": list_date,
-                "type": "",      # 期权 C/P 需从合约代码解析或额外字段获取
-                "strike": 0.0,   # 期货无行权价；期权需从合约代码解析
-            }
-            records.append(record)
-
-    logger.info("Parsed %d contracts from /ins", len(records))
-    return records
-
-
-def _parse_price(price_data: dict) -> dict[str, dict]:
-    """解析 /price 返回的表格结构为 code → 价格字段 的映射。
-
-    price_data 结构:
-        {"fields": [...], "depth": [[...], ...]}
-
-    每个 depth 行按 fields 顺序排列，返回:
-        {code: {last_price, volume, change, ...}}
-    """
-    fields: list[str] = price_data.get("fields", [])
-    depth: list[list] = price_data.get("depth", [])
-
-    # 建立字段名 → 列索引映射
-    field_index: dict[str, int] = {name: idx for idx, name in enumerate(fields)}
-
-    # 关键字段索引（以中文名为准）
-    code_idx = field_index.get("合约id", 0)
-    price_idx = field_index.get("最新价", -1)
-    volume_idx = field_index.get("成交量", -1)
-    pre_close_idx = field_index.get("昨收", -1)  # 用于计算涨跌额
-
-    result: dict[str, dict] = {}
-    for row in depth:
-        if not row:
-            continue
-        code = str(row[code_idx]) if code_idx < len(row) else ""
-
-        # 最新价
-        last_price = 0.0
-        if price_idx >= 0 and price_idx < len(row):
-            try:
-                last_price = float(row[price_idx])
-            except (ValueError, TypeError):
-                last_price = 0.0
-
-        # 成交量
-        volume = 0
-        if volume_idx >= 0 and volume_idx < len(row):
-            try:
-                volume = int(row[volume_idx])
-            except (ValueError, TypeError):
-                volume = 0
-
-        # 涨跌额 = 最新价 - 昨收
-        change = 0.0
-        if pre_close_idx >= 0 and pre_close_idx < len(row):
-            try:
-                pre_close = float(row[pre_close_idx])
-                change = last_price - pre_close
-            except (ValueError, TypeError):
-                change = 0.0
-
-        result[code] = {
-            "last_price": last_price,
-            "volume": volume,
-            "change": change,
-        }
-
-    logger.info("Parsed %d price records from /price", len(result))
-    return result
-
-
 def _merge(ins_data: dict, price_data: dict) -> pd.DataFrame:
     """合并 /ins 和 /price 数据为统一 DataFrame。
 
     合并键: code（合约代码）。
-    未匹配到价格的合约，价格字段填 0。
+    未匹配到价格的合约，价格字段填默认值。
     """
     # 解析两方数据
-    ins_records = _parse_ins(ins_data)
-    price_map = _parse_price(price_data)
+    reset_main_flags()
+    ins_records = parse_ins(ins_data)
+    price_map = parse_price(price_data)
+    main_flags = get_main_flags()
 
     if not ins_records:
         logger.warning("/ins returned no contracts")
         return pd.DataFrame()
 
-    # 合并价格到每条合约记录
-    for record in ins_records:
-        code = record["code"]
-        price_info = price_map.get(code, {})
-        record["last_price"] = price_info.get("last_price", 0.0)
-        record["volume"] = price_info.get("volume", 0)
-        record["change"] = price_info.get("change", 0.0)
+    # 构建 flat 行列表（用于 DataFrame 缓存）
+    rows: list[dict] = []
+    for ins in ins_records:
+        code = ins.code
+        price = price_map.get(code)
 
-    df = pd.DataFrame(ins_records)
+        # 从 price 数据回填 main_flag
+        ins.main_flag = main_flags.get(code, 0)
+
+        row = {
+            # ins 字段
+            "code": ins.code,
+            "underlying": ins.underlying,
+            "product_type": ins.product_type,
+            "type": ins.option_type,        # 保持列名 "type" 用于缓存兼容
+            "strike": ins.strike,
+            "expiry": ins.expiry,
+            "list_date": ins.list_date,
+            "underlying_name": ins.underlying_name,
+            "exchange": ins.exchange,
+            "contract_multiplier": ins.contract_multiplier,
+            "tick_size": ins.tick_size,
+            "main_flag": ins.main_flag,
+            # price 字段
+            "last_price": price.last_price if price else 0.0,
+            "open": price.open if price else 0.0,
+            "high": price.high if price else 0.0,
+            "low": price.low if price else 0.0,
+            "pre_close": price.pre_close if price else 0.0,
+            "pre_settle": price.pre_settle if price else 0.0,
+            "settle": price.settle if price else 0.0,
+            "avg_price": price.avg_price if price else 0.0,
+            "change": price.change if price else 0.0,
+            "upper_limit": price.upper_limit if price else 0.0,
+            "lower_limit": price.lower_limit if price else 0.0,
+            "volume": price.volume if price else 0,
+            "turnover": price.turnover if price else 0.0,
+            "open_interest": price.open_interest if price else 0,
+            "pre_open_interest": price.pre_open_interest if price else 0,
+            "bid1_price": price.bid1_price if price else 0.0,
+            "bid1_volume": price.bid1_volume if price else 0,
+            "ask1_price": price.ask1_price if price else 0.0,
+            "ask1_volume": price.ask1_volume if price else 0,
+            "trade_date": price.trade_date if price else "",
+            "update_time": price.update_time if price else "",
+            # fetched_at 存为字符串以便 DataFrame 序列化
+            "fetched_at": price.fetched_at.isoformat() if (price and price.fetched_at) else "",
+        }
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
 
     # 确保必要列存在
-    for col in ("code", "underlying", "product_type", "type", "strike",
-                "expiry", "last_price", "change", "volume"):
-        if col not in df.columns:
-            df[col] = "" if col in ("code", "underlying", "product_type", "type", "expiry") else 0
+    _ensure_columns(df)
 
     logger.info("Merged DataFrame: %d rows, columns=%s", len(df), list(df.columns))
     return df
 
 
-def _map_product_type(raw_type) -> str:
-    """将 /ins 中 pi.pt 字段值映射为 product_type 字符串。
+def _ensure_columns(df: pd.DataFrame) -> None:
+    """确保 DataFrame 包含所有预期列，缺失的补默认值。"""
+    str_cols = [
+        "code", "underlying", "product_type", "type", "expiry", "list_date",
+        "underlying_name", "exchange", "trade_date", "update_time", "fetched_at",
+    ]
+    float_cols = [
+        "strike", "tick_size", "last_price", "open", "high", "low",
+        "pre_close", "pre_settle", "settle", "avg_price", "change",
+        "upper_limit", "lower_limit", "turnover", "bid1_price", "ask1_price",
+    ]
+    int_cols = [
+        "contract_multiplier", "main_flag", "volume", "open_interest",
+        "pre_open_interest", "bid1_volume", "ask1_volume",
+    ]
 
-    pt 含义（以样例注释为准）:
-        1 → 期货
-        2 → 期权
-        6 → 个股期权
-    """
-    try:
-        t = int(raw_type)
-    except (ValueError, TypeError):
-        return "unknown"
-
-    if t in config.option_types:
-        return "option"
-    if t in config.future_types:
-        return "future"
-    return "unknown"
-
-
-def _format_date(raw) -> str:
-    """将数字日期格式化为 ISO 日期字符串。
-
-    20261021 → "2026-10-21"
-    "" / 0 / None → ""
-    """
-    if raw is None or raw == "" or raw == 0:
-        return ""
-    try:
-        s = str(int(raw))
-        if len(s) == 8:
-            return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
-    except (ValueError, TypeError):
-        pass
-    return str(raw)
+    for col in str_cols:
+        if col not in df.columns:
+            df[col] = ""
+    for col in float_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+    for col in int_cols:
+        if col not in df.columns:
+            df[col] = 0

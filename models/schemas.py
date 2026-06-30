@@ -15,12 +15,77 @@ class ProductType(str, Enum):
     FUTURE = "future"
 
 
+# ---------------------------------------------------------------------------
+# 合约子模型
+# ---------------------------------------------------------------------------
+
+class InsInfo(BaseModel):
+    """合约基础信息 — 来自 /ins API，全量映射。"""
+
+    code: str                                              # i: 合约代码
+    underlying: str                                        # p: 品种代码
+    underlying_name: str = ""                              # pi.n: 品种名称
+    exchange: str = ""                                     # pi.ex: 交易所
+    product_type: str = ""                                 # pi.pt 映射 → "option" / "future"
+    expiry: str = ""                                       # E: 到期日 YYYY-MM-DD
+    list_date: str = ""                                    # O: 上市日 YYYY-MM-DD
+    option_type: str = ""                                  # C/P，从 code 解析，期货为空
+    strike: float = 0.0                                    # 行权价，从 code 解析，期货为 0
+    contract_multiplier: int = 1                           # pi.M: 合约乘数
+    tick_size: float = 0.0                                 # pi.t / 10000: 最小变动价
+    main_flag: int = 0                                     # 主力标志（price API 主力标志回填）
+
+
+class PriceInfo(BaseModel):
+    """实时行情 — 来自 /price API，全量映射。"""
+
+    # 基础行情
+    last_price: float = 0.0        # 最新价
+    open: float = 0.0              # 开盘价
+    high: float = 0.0              # 最高价
+    low: float = 0.0               # 最低价
+    pre_close: float = 0.0         # 昨收
+    pre_settle: float = 0.0        # 昨结
+    settle: float = 0.0            # 结算价
+    avg_price: float = 0.0         # 均价
+    # 涨跌
+    change: float = 0.0            # 涨跌额 = 最新价 - 昨收
+    upper_limit: float = 0.0       # 涨停价
+    lower_limit: float = 0.0       # 跌停价
+    # 量仓
+    volume: int = 0                # 成交量
+    turnover: float = 0.0          # 成交额
+    open_interest: int = 0         # 今持仓
+    pre_open_interest: int = 0     # 昨持仓
+    # 盘口
+    bid1_price: float = 0.0        # 买1价
+    bid1_volume: int = 0           # 买1量
+    ask1_price: float = 0.0        # 卖1价
+    ask1_volume: int = 0           # 卖1量
+    # 时间
+    trade_date: str = ""           # 交易日 YYYY-MM-DD
+    update_time: str = ""          # 交易所行情更新时间
+    fetched_at: Optional[datetime] = None  # 服务拉取到价格的时间
+
+
+class ContractItem(BaseModel):
+    """整合后的合约完整信息。"""
+
+    ins: InsInfo
+    price: PriceInfo
+    # 预留: kline: Optional[KlineInfo] = None
+
+
+# ---------------------------------------------------------------------------
+# 查询参数 & 响应
+# ---------------------------------------------------------------------------
+
 class QueryParams(BaseModel):
     """查询参数模型。期权/期货共用。"""
 
     code: Optional[list[str]] = Field(default=None, description="合约代码列表，模糊匹配（对每个值做 OR 匹配）")
     underlying: Optional[str] = Field(default=None, description="标的物代码")
-    type: Optional[str] = Field(default=None, description="C（看涨）/ P（看跌），仅期权有效")
+    option_type: Optional[str] = Field(default=None, description="C（看涨）/ P（看跌），仅期权有效")
     strike_ge: Optional[float] = Field(default=None, description="行权价 >= ，仅期权有效")
     strike_le: Optional[float] = Field(default=None, description="行权价 <= ，仅期权有效")
     expiry_ge: Optional[date] = Field(default=None, description="到期日 >= ")
@@ -64,20 +129,6 @@ class QueryParams(BaseModel):
         if self.sort is None:
             return None
         return self.sort.endswith("_asc")
-
-
-class ContractItem(BaseModel):
-    """单条合约记录（期权/期货通用）。"""
-
-    code: str
-    underlying: str
-    product_type: str = ""  # "option" / "future"
-    type: str = ""  # 期权: "C"/"P", 期货: 空字符串
-    strike: float = 0.0
-    expiry: str = ""  # 日期字符串
-    last_price: float = 0.0
-    change: float = 0.0
-    volume: int = 0
 
 
 class QueryResponse(BaseModel):

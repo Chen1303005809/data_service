@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from cache.redis_client import cache_client
-from models.schemas import ContractItem, ProductType, QueryParams, QueryResponse
+from models.schemas import ContractItem, InsInfo, PriceInfo, ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +40,7 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
 
     # --- 最终仍无数据 ---
     if df is None or df.empty:
-        return QueryResponse(
-            total=0,
-            limit=params.limit,
-            offset=params.offset,
-            cached_at=cached_at,
-            stale=True,
-            items=[],
-        )
+        raise DataUnavailableError("No data available from cache or live fetch")
 
     total_before = len(df)
 
@@ -110,9 +103,9 @@ def _apply_filters(df: pd.DataFrame, params: QueryParams) -> pd.DataFrame:
     if params.underlying:
         df = df[df["underlying"] == params.underlying]
 
-    if params.type:
+    if params.option_type:
         # 期权看涨/看跌过滤（期货的 type 列为空，自然被排除）
-        df = df[df["type"] == params.type]
+        df = df[df["type"] == params.option_type]
 
     if params.strike_ge is not None:
         df = df[df["strike"] >= params.strike_ge]
@@ -136,15 +129,59 @@ def _apply_filters(df: pd.DataFrame, params: QueryParams) -> pd.DataFrame:
 
 
 def _row_to_item(row: pd.Series) -> ContractItem:
-    """将 DataFrame 行转换为 ContractItem 模型。"""
+    """将 DataFrame 行转换为嵌套 ContractItem（InsInfo + PriceInfo）。"""
     return ContractItem(
-        code=str(row.get("code", "")),
-        underlying=str(row.get("underlying", "")),
-        product_type=str(row.get("product_type", "")),
-        type=str(row.get("type", "")),
-        strike=float(row.get("strike", 0)),
-        expiry=str(row.get("expiry", "")),
-        last_price=float(row.get("last_price", 0)),
-        change=float(row.get("change", 0)),
-        volume=int(row.get("volume", 0)),
+        ins=InsInfo(
+            code=str(row.get("code", "")),
+            underlying=str(row.get("underlying", "")),
+            underlying_name=str(row.get("underlying_name", "")),
+            exchange=str(row.get("exchange", "")),
+            product_type=str(row.get("product_type", "")),
+            expiry=str(row.get("expiry", "")),
+            list_date=str(row.get("list_date", "")),
+            option_type=str(row.get("type", "")),
+            strike=float(row.get("strike", 0)),
+            contract_multiplier=int(row.get("contract_multiplier", 1)),
+            tick_size=float(row.get("tick_size", 0)),
+            main_flag=int(row.get("main_flag", 0)),
+        ),
+        price=PriceInfo(
+            last_price=float(row.get("last_price", 0)),
+            open=float(row.get("open", 0)),
+            high=float(row.get("high", 0)),
+            low=float(row.get("low", 0)),
+            pre_close=float(row.get("pre_close", 0)),
+            pre_settle=float(row.get("pre_settle", 0)),
+            settle=float(row.get("settle", 0)),
+            avg_price=float(row.get("avg_price", 0)),
+            change=float(row.get("change", 0)),
+            upper_limit=float(row.get("upper_limit", 0)),
+            lower_limit=float(row.get("lower_limit", 0)),
+            volume=int(row.get("volume", 0)),
+            turnover=float(row.get("turnover", 0)),
+            open_interest=int(row.get("open_interest", 0)),
+            pre_open_interest=int(row.get("pre_open_interest", 0)),
+            bid1_price=float(row.get("bid1_price", 0)),
+            bid1_volume=int(row.get("bid1_volume", 0)),
+            ask1_price=float(row.get("ask1_price", 0)),
+            ask1_volume=int(row.get("ask1_volume", 0)),
+            trade_date=str(row.get("trade_date", "")),
+            update_time=str(row.get("update_time", "")),
+            fetched_at=_parse_fetched_at(row.get("fetched_at", "")),
+        ),
     )
+
+
+def _parse_fetched_at(raw) -> datetime | None:
+    """从字符串解析 fetched_at。"""
+    if not raw or raw == "":
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except (ValueError, TypeError):
+        return None
+
+
+class DataUnavailableError(Exception):
+    """数据不可用异常 — 缓存空且实时拉取失败时抛出。"""
+    pass
