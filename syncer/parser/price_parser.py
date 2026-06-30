@@ -160,15 +160,30 @@ def _format_trade_date(row: list, field_index: dict[str, int]) -> str:
 
 
 def _format_update_time(row: list, field_index: dict[str, int]) -> str:
-    """更新时间：毫秒时间戳 → ISO 字符串。"""
+    """更新时间：HHMMSSfff 编码 → HH:MM:SS 字符串。
+
+    编码规则（以 93743000 为例）:
+        93743000 // 1000 = 93743 (HHMMSS)
+        93743 % 100 = 43 (秒)
+        93743 // 100 = 937
+        937 % 100 = 37 (分)
+        937 // 100 = 9 (时)
+        93743000 % 1000 = 0 (毫秒)
+        → "09:37:43"
+    """
     idx = field_index.get("更新时间", -1)
     if 0 <= idx < len(row):
         raw = row[idx]
         if raw is not None and raw != "" and raw != 0:
             try:
                 ts = int(raw)
-                dt = datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc)
-                return dt.isoformat()
-            except (ValueError, TypeError, OSError):
+                ms = ts % 1000
+                hhmmss = ts // 1000
+                ss = hhmmss % 100
+                hhmm = hhmmss // 100
+                mm = hhmm % 100
+                hh = hhmm // 100
+                return f"{hh:02d}:{mm:02d}:{ss:02d}"
+            except (ValueError, TypeError):
                 pass
     return ""
