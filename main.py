@@ -9,12 +9,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from api.router import router
-from cache.redis_client import cache_client
-from config import config
-from syncer.sync import fetch_and_sync
-
+# ⚠️ load_dotenv() 必须在 config / cache_client 等模块 import 之前调用，
+# 因为这些模块在 import 时就会读取环境变量（如 INS_API_URL）。
 load_dotenv()
+
+from api.router import router       # noqa: E402
+from cache.redis_client import cache_client  # noqa: E402
+from config import config           # noqa: E402
+from syncer.sync import fetch_and_sync  # noqa: E402
 
 logging.basicConfig(
     level=getattr(logging, config.log_level.upper(), logging.INFO),
