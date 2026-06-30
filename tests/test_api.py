@@ -61,6 +61,23 @@ class TestOptionsEndpoint:
         data = resp.json()
         assert len(data["items"]) == 1
 
+    def test_filter_by_multi_code(self, client):
+        """多 code 查询：OR 逻辑，通过 ?code=A&code=B 传参。"""
+        resp = client.get("/api/options?code=IO2409-C&code=IF2409")
+        assert resp.status_code == 200
+        data = resp.json()
+        # sample_df 中仅1条期权含 IO2409-C；IF2409 是期货被 product_type 过滤
+        assert data["total"] == 1
+
+    def test_single_code_still_works(self, client):
+        """单个 code 向后兼容，自动解析为列表。"""
+        resp = client.get("/api/options?code=IO2409-C")
+        assert resp.status_code == 200
+        data = resp.json()
+        # sample_df 中仅1条 IO2409-C 期权
+        assert data["total"] == 1
+        assert all("IO2409-C" in item["code"] for item in data["items"])
+
     def test_invalid_type(self, client):
         resp = client.get("/api/options?type=X")
         assert resp.status_code == 422
@@ -84,12 +101,11 @@ class TestFuturesEndpoint:
         assert data["total"] == 1
 
     def test_futures_no_callput(self, client):
-        """期货没有 C/P 类型，filter 忽略该参数。"""
+        """期货端点无 type 参数，?type=C 被忽略，返回全部期货。"""
         resp = client.get("/api/futures?type=C")
         assert resp.status_code == 200
         data = resp.json()
-        # 所有期货 type 为空，所以 C 过滤后结果为 0
-        assert data["total"] == 0
+        assert data["total"] == 1
 
 
 class TestHealth:

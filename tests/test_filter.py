@@ -71,7 +71,21 @@ class TestFilterEngine:
 
     def test_filter_by_code_fuzzy(self, sample_df):
         from engine.filter import _apply_filters
-        params = QueryParams(code="IO2409")
+        params = QueryParams(code=["IO2409"])
+        result = _apply_filters(sample_df, params)
+        assert len(result) == 3
+
+    def test_filter_by_multi_code(self, sample_df):
+        """多 code 模糊匹配：OR 逻辑。"""
+        from engine.filter import _apply_filters
+        params = QueryParams(code=["IO2409-C", "IF2409"])
+        result = _apply_filters(sample_df, params)
+        assert len(result) == 3  # 两个 IO2409-C 看涨期权 + 一个 IF2409 期货
+
+    def test_filter_by_multi_code_empty_string_ignored(self, sample_df):
+        """空字符串 code 被忽略。"""
+        from engine.filter import _apply_filters
+        params = QueryParams(code=["", "IO2409", ""])
         result = _apply_filters(sample_df, params)
         assert len(result) == 3
 
