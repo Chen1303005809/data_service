@@ -12,8 +12,8 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY_LATEST = "options:latest"
-TEMP_KEY_PREFIX = "options:temp:"
+CACHE_KEY_LATEST = "contracts:latest"
+TEMP_KEY_PREFIX = "contracts:temp:"
 
 
 class CacheClient:

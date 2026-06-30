@@ -1,4 +1,4 @@
-"""期权数据服务入口：FastAPI 应用 + 定时同步调度。"""
+"""合约数据服务入口：FastAPI 应用 + 定时同步调度。"""
 
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="期权数据服务",
-    description="为 DIFY 工具节点提供期权数据查询，支持多维度筛选、排序和分页。",
+    title="合约数据服务",
+    description="为 DIFY 工具节点提供期货/期权数据查询，支持多维度筛选、排序和分页。",
     version="1.0.0",
     lifespan=lifespan,
 )

@@ -8,13 +8,18 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from cache.redis_client import cache_client
-from models.schemas import OptionItem, QueryParams, QueryResponse
+from models.schemas import ContractItem, ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
 
 
-async def query(params: QueryParams) -> QueryResponse:
-    """执行查询：从缓存获取数据 → 过滤 → 排序 → 分页 → 返回响应。"""
+async def query(params: QueryParams, product_type: ProductType | None = None) -> QueryResponse:
+    """执行查询：从缓存获取数据 → 过滤 → 排序 → 分页 → 返回响应。
+
+    Args:
+        params: 用户查询参数
+        product_type: 可选的产品类型过滤（option/future），由路由层传入
+    """
     df = await cache_client.get_df()
     if df is None or df.empty:
         return QueryResponse(
@@ -28,7 +33,11 @@ async def query(params: QueryParams) -> QueryResponse:
 
     total_before = len(df)
 
-    # 逐步过滤
+    # 产品类型筛选
+    if product_type is not None:
+        df = df[df["product_type"] == product_type.value]
+
+    # 通用过滤
     df = _apply_filters(df, params)
 
     cached_at = await cache_client.get_cached_at() or datetime.now(timezone.utc)
@@ -36,10 +45,16 @@ async def query(params: QueryParams) -> QueryResponse:
 
     total = len(df)
 
-    # 排序
+    # 排序（sort 参数中的字段名映射到 DataFrame 列名）
+    _SORT_FIELD_MAP = {
+        "price": "last_price",
+        "strike": "strike",
+        "expiry": "expiry",
+    }
     if params.sort_field:
+        df_col = _SORT_FIELD_MAP.get(params.sort_field, params.sort_field)
         ascending = params.sort_ascending if params.sort_ascending is not None else True
-        df = df.sort_values(by=params.sort_field, ascending=ascending)
+        df = df.sort_values(by=df_col, ascending=ascending)
 
     # 分页
     df = df.iloc[params.offset : params.offset + params.limit]
@@ -47,9 +62,10 @@ async def query(params: QueryParams) -> QueryResponse:
     items = [_row_to_item(row) for _, row in df.iterrows()]
 
     logger.debug(
-        "Query: %d → %d results (stale=%s)",
+        "Query: %d → %d results (product_type=%s, stale=%s)",
         total_before,
         total,
+        product_type,
         stale,
     )
 
@@ -72,7 +88,8 @@ def _apply_filters(df: pd.DataFrame, params: QueryParams) -> pd.DataFrame:
         df = df[df["underlying"] == params.underlying]
 
     if params.type:
-        df = df[df["type"] == params.type.value]
+        # 期权看涨/看跌过滤（期货的 type 列为空，自然被排除）
+        df = df[df["type"] == params.type]
 
     if params.strike_ge is not None:
         df = df[df["strike"] >= params.strike_ge]
@@ -95,11 +112,12 @@ def _apply_filters(df: pd.DataFrame, params: QueryParams) -> pd.DataFrame:
     return df
 
 
-def _row_to_item(row: pd.Series) -> OptionItem:
-    """将 DataFrame 行转换为 OptionItem 模型。"""
-    return OptionItem(
+def _row_to_item(row: pd.Series) -> ContractItem:
+    """将 DataFrame 行转换为 ContractItem 模型。"""
+    return ContractItem(
         code=str(row.get("code", "")),
         underlying=str(row.get("underlying", "")),
+        product_type=str(row.get("product_type", "")),
         type=str(row.get("type", "")),
         strike=float(row.get("strike", 0)),
         expiry=str(row.get("expiry", "")),

@@ -1,27 +1,28 @@
-"""Pydantic 数据模型：请求参数、期权记录、查询响应。"""
+"""Pydantic 数据模型：请求参数、合约记录、查询响应。"""
 
 from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
 
-class OptionType(str, Enum):
-    CALL = "C"
-    PUT = "P"
+class ProductType(str, Enum):
+    """产品类型，用于内部路由。"""
+    OPTION = "option"
+    FUTURE = "future"
 
 
 class QueryParams(BaseModel):
-    """GET /api/options 查询参数模型。"""
+    """查询参数模型。期权/期货共用。"""
 
     code: Optional[str] = Field(default=None, description="合约代码，模糊匹配")
     underlying: Optional[str] = Field(default=None, description="标的物代码")
-    type: Optional[OptionType] = Field(default=None, description="C（看涨）/ P（看跌）")
-    strike_ge: Optional[float] = Field(default=None, description="行权价 >= ")
-    strike_le: Optional[float] = Field(default=None, description="行权价 <= ")
+    type: Optional[str] = Field(default=None, description="C（看涨）/ P（看跌），仅期权有效")
+    strike_ge: Optional[float] = Field(default=None, description="行权价 >= ，仅期权有效")
+    strike_le: Optional[float] = Field(default=None, description="行权价 <= ，仅期权有效")
     expiry_ge: Optional[date] = Field(default=None, description="到期日 >= ")
     expiry_le: Optional[date] = Field(default=None, description="到期日 <= ")
     price_ge: Optional[float] = Field(default=None, description="最新价 >= ")
@@ -30,12 +31,8 @@ class QueryParams(BaseModel):
         default=None,
         description="排序: price_asc, price_desc, strike_asc, strike_desc, expiry_asc, expiry_desc",
     )
-    limit: Annotated[int, Field(default=50, ge=1, le=500)] = Field(
-        default=50, ge=1, le=500, description="返回条数上限"
-    )
-    offset: Annotated[int, Field(default=0, ge=0)] = Field(
-        default=0, ge=0, description="分页偏移"
-    )
+    limit: int = Field(default=50, ge=1, le=500, description="返回条数上限")
+    offset: int = Field(default=0, ge=0, description="分页偏移")
 
     @model_validator(mode="after")
     def check_range_consistency(self) -> "QueryParams":
@@ -69,15 +66,16 @@ class QueryParams(BaseModel):
         return self.sort.endswith("_asc")
 
 
-class OptionItem(BaseModel):
-    """单条期权记录。字段根据实际外部 API 返回调整。"""
+class ContractItem(BaseModel):
+    """单条合约记录（期权/期货通用）。"""
 
     code: str
     underlying: str
-    type: str
-    strike: float
-    expiry: str  # 日期字符串
-    last_price: float
+    product_type: str = ""  # "option" / "future"
+    type: str = ""  # 期权: "C"/"P", 期货: 空字符串
+    strike: float = 0.0
+    expiry: str = ""  # 日期字符串
+    last_price: float = 0.0
     change: float = 0.0
     volume: int = 0
 
@@ -90,4 +88,4 @@ class QueryResponse(BaseModel):
     offset: int
     cached_at: datetime
     stale: bool = False
-    items: list[OptionItem]
+    items: list[ContractItem]
