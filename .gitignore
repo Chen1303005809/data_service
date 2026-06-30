@@ -4,3 +4,5 @@
 .venv
 docs
 data_example
+__pycache__
+%SystemDrive%

@@ -97,7 +97,15 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
 def _apply_filters(df: pd.DataFrame, params: QueryParams) -> pd.DataFrame:
     """逐条件过滤 DataFrame。"""
     if params.code:
-        df = df[df["code"].str.contains(params.code, case=False, na=False)]
+        masks = []
+        for c in params.code:
+            if c:
+                masks.append(df["code"].str.contains(c, case=False, na=False))
+        if masks:
+            combined = masks[0]
+            for m in masks[1:]:
+                combined = combined | m
+            df = df[combined]
 
     if params.underlying:
         df = df[df["underlying"] == params.underlying]

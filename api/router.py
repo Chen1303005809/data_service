@@ -17,7 +17,7 @@ router = APIRouter(tags=["contracts"])
 
 async def _get_contracts(
     product_type: ProductType,
-    code: str | None = Query(default=None, description="合约代码，模糊匹配"),
+    code: list[str] | None = Query(default=None, description="合约代码列表，模糊匹配（支持多值 OR）"),
     underlying: str | None = Query(default=None, description="标的物代码"),
     type: str | None = Query(default=None, pattern="^[CP]$", description="C（看涨）/ P（看跌），仅期权有效"),
     strike_ge: float | None = Query(default=None, description="行权价 >= "),
@@ -63,7 +63,7 @@ async def _get_contracts(
     summary="查询期权数据",
 )
 async def get_options(
-    code: str | None = Query(default=None, description="合约代码，模糊匹配"),
+    code: list[str] | None = Query(default=None, description="合约代码列表，模糊匹配（支持多值 OR）"),
     underlying: str | None = Query(default=None, description="标的物代码"),
     type: str | None = Query(default=None, pattern="^[CP]$", description="C（看涨）/ P（看跌）"),
     strike_ge: float | None = Query(default=None, description="行权价 >= "),
@@ -104,7 +104,7 @@ async def get_options(
     summary="查询期货数据",
 )
 async def get_futures(
-    code: str | None = Query(default=None, description="合约代码，模糊匹配"),
+    code: list[str] | None = Query(default=None, description="合约代码列表，模糊匹配（支持多值 OR）"),
     underlying: str | None = Query(default=None, description="标的物代码"),
     strike_ge: float | None = Query(default=None, description="行权价 >= "),
     strike_le: float | None = Query(default=None, description="行权价 <= "),

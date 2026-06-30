@@ -41,8 +41,8 @@ async def fetch_data() -> pd.DataFrame | None:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             ins_resp, price_resp = await asyncio_compat_gather(
-                client.get(config.ins_api_url),
-                client.get(config.price_api_url),
+                client.post(config.ins_api_url),
+                client.post(config.price_api_url),
             )
 
         ins_resp.raise_for_status()

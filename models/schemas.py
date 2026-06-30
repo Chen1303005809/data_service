@@ -18,7 +18,7 @@ class ProductType(str, Enum):
 class QueryParams(BaseModel):
     """查询参数模型。期权/期货共用。"""
 
-    code: Optional[str] = Field(default=None, description="合约代码，模糊匹配")
+    code: Optional[list[str]] = Field(default=None, description="合约代码列表，模糊匹配（对每个值做 OR 匹配）")
     underlying: Optional[str] = Field(default=None, description="标的物代码")
     type: Optional[str] = Field(default=None, description="C（看涨）/ P（看跌），仅期权有效")
     strike_ge: Optional[float] = Field(default=None, description="行权价 >= ，仅期权有效")
