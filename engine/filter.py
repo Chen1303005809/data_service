@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pandas as pd
 
 from cache.redis_client import cache_client
+from config import CST
 from models.schemas import ContractItem, InsInfo, PriceInfo, ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
     """
     df = await cache_client.get_df()
     stale = await cache_client.is_stale() or False
-    cached_at = await cache_client.get_cached_at() or datetime.now(timezone.utc)
+    cached_at = await cache_client.get_cached_at() or datetime.now(CST)
 
     # --- 兜底：缓存不可用时实时拉取 ---
     if df is None or df.empty:
@@ -34,7 +35,7 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
         if df is not None and not df.empty:
             # 回写缓存（至少写本地），让后续请求受益
             await cache_client.set_df(df)
-            cached_at = datetime.now(timezone.utc)
+            cached_at = datetime.now(CST)
             stale = False
             logger.info("Live fetch succeeded, wrote %d records to cache", len(df))
 

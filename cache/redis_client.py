@@ -4,12 +4,12 @@ from __future__ import annotations
 from io import BytesIO
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pandas as pd
 import redis.asyncio as aioredis
 
-from config import config
+from config import CST, config
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class CacheClient:
             try:
                 ttl = await self._redis.ttl(CACHE_KEY_LATEST)
                 if ttl > 0:
-                    return datetime.now(timezone.utc).replace(
+                    return datetime.now(CST).replace(
                         microsecond=0
                     )  # 无法精确还原，标记为当前
             except Exception:
@@ -100,7 +100,7 @@ class CacheClient:
         使用临时 key + RENAME 保证原子替换。
         """
         if self._redis:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(CST)
             buf = BytesIO()
             df.to_parquet(buf, index=False)
 

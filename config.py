@@ -2,6 +2,10 @@
 
 import os
 from dataclasses import dataclass, field
+from datetime import timedelta, timezone
+
+# 全局时区常量：中国标准时间 UTC+8
+CST = timezone(timedelta(hours=8))
 
 
 def _parse_int_list(value: str) -> set[int]:

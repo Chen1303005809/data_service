@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
@@ -15,16 +16,33 @@ load_dotenv()
 
 from api.router import router       # noqa: E402
 from cache.redis_client import cache_client  # noqa: E402
-from config import config           # noqa: E402
+from config import CST, config      # noqa: E402
 from syncer.sync import fetch_and_sync  # noqa: E402
+
+
+class CSTFormatter(logging.Formatter):
+    """使用 CST (Asia/Shanghai) 时区的日志格式化器。"""
+
+    def formatTime(self, record, datefmt=None):
+        ct = datetime.fromtimestamp(record.created, CST)
+        if datefmt:
+            return ct.strftime(datefmt)
+        return ct.strftime("%Y-%m-%d %H:%M:%S")
+
+
+_log_format = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
 logging.basicConfig(
     level=getattr(logging, config.log_level.upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    format=_log_format,
 )
+# 替换所有 handler 的 formatter 为 CST 时区版本
+for _h in logging.getLogger().handlers:
+    _h.setFormatter(CSTFormatter(_log_format))
+
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(timezone=CST)
 
 
 @asynccontextmanager

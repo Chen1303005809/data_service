@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 # ---- 运行阶段 ----
 FROM python:3.12-slim
 
+# 设置时区为中国标准时间
+ENV TZ=Asia/Shanghai
+
 WORKDIR /app
 
 # 复制已安装的包

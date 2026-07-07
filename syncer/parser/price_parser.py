@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
+from config import CST
 from models.schemas import PriceInfo
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ def parse_price(price_data: dict) -> dict[str, PriceInfo]:
     # 建立字段名 → 列索引映射
     field_index: dict[str, int] = {name: idx for idx, name in enumerate(fields)}
 
-    fetched_at = datetime.now(timezone.utc)
+    fetched_at = datetime.now(CST)
 
     result: dict[str, PriceInfo] = {}
     for row in depth:
