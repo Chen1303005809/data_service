@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
@@ -37,35 +38,38 @@ class InsInfo(BaseModel):
 
 
 class PriceInfo(BaseModel):
-    """实时行情 — 来自 /price API，全量映射。"""
+    """实时行情 — 来自 /price API，全量映射。
 
-    # 基础行情
-    last_price: float = 0.0        # 最新价
-    open: float = 0.0              # 开盘价
-    high: float = 0.0              # 最高价
-    low: float = 0.0               # 最低价
-    pre_close: float = 0.0         # 昨收
-    pre_settle: float = 0.0        # 昨结
-    settle: float = 0.0            # 结算价
-    avg_price: float = 0.0         # 均价
+    所有价格为实际值（外部 API 原始值 ×10000 为整数，解析时统一 ÷10000）。
+    """
+
+    # 基础行情（Decimal 保证金融级精度）
+    last_price: Decimal = Decimal("0")      # 最新价
+    open: Decimal = Decimal("0")            # 开盘价
+    high: Decimal = Decimal("0")            # 最高价
+    low: Decimal = Decimal("0")             # 最低价
+    pre_close: Decimal = Decimal("0")       # 昨收
+    pre_settle: Decimal = Decimal("0")      # 昨结
+    settle: Decimal = Decimal("0")          # 结算价
+    avg_price: Decimal = Decimal("0")       # 均价
     # 涨跌
-    change: float = 0.0            # 涨跌额 = 最新价 - 昨收
-    upper_limit: float = 0.0       # 涨停价
-    lower_limit: float = 0.0       # 跌停价
+    change: Decimal = Decimal("0")          # 涨跌额 = 最新价 - 昨收
+    upper_limit: Decimal = Decimal("0")     # 涨停价
+    lower_limit: Decimal = Decimal("0")     # 跌停价
     # 量仓
-    volume: int = 0                # 成交量
-    turnover: float = 0.0          # 成交额
-    open_interest: int = 0         # 今持仓
-    pre_open_interest: int = 0     # 昨持仓
+    volume: int = 0                         # 成交量
+    turnover: Decimal = Decimal("0")        # 成交额
+    open_interest: int = 0                  # 今持仓
+    pre_open_interest: int = 0              # 昨持仓
     # 盘口
-    bid1_price: float = 0.0        # 买1价
-    bid1_volume: int = 0           # 买1量
-    ask1_price: float = 0.0        # 卖1价
-    ask1_volume: int = 0           # 卖1量
+    bid1_price: Decimal = Decimal("0")      # 买1价
+    bid1_volume: int = 0                    # 买1量
+    ask1_price: Decimal = Decimal("0")      # 卖1价
+    ask1_volume: int = 0                    # 卖1量
     # 时间
-    trade_date: str = ""           # 交易日 YYYY-MM-DD
-    update_time: str = ""          # 交易所行情更新时间
-    fetched_at: Optional[datetime] = None  # 服务拉取到价格的时间
+    trade_date: str = ""                    # 交易日 YYYY-MM-DD
+    update_time: str = ""                   # 交易所行情更新时间
+    fetched_at: Optional[datetime] = None   # 服务拉取到价格的时间
 
 
 class ContractItem(BaseModel):

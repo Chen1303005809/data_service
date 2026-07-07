@@ -1,14 +1,22 @@
-"""/price API 解析器：将外部行情数据转换为 PriceInfo 字典。"""
+"""/price API 解析器：将外部行情数据转换为 PriceInfo 字典。
+
+外部 API 的价格字段均为实际价格 ×10000 的整数（避免浮点精度丢失），
+解析时统一除以 10000 还原为实际价格，并使用 Decimal 保证金融级精度。
+"""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 
 from config import CST
 from models.schemas import PriceInfo
 
 logger = logging.getLogger(__name__)
+
+# 外部 API 价格倍数：所有价格字段均为实际值 ×10000
+_PRICE_SCALE = Decimal("10000")
 
 
 def parse_price(price_data: dict) -> dict[str, PriceInfo]:
@@ -34,31 +42,31 @@ def parse_price(price_data: dict) -> dict[str, PriceInfo]:
 
         code = _get_str(row, field_index, "合约id")
 
-        # 基础行情
-        last_price = _get_float(row, field_index, "最新价")
-        open_price = _get_float(row, field_index, "开盘价")
-        high = _get_float(row, field_index, "最高价")
-        low = _get_float(row, field_index, "最低价")
-        pre_close = _get_float(row, field_index, "昨收")
-        pre_settle = _get_float(row, field_index, "昨结")
-        settle = _get_float(row, field_index, "结算价")
-        avg_price = _get_float(row, field_index, "均价")
+        # 基础行情（原始整数 ÷10000 → Decimal 实际价格）
+        last_price = _get_price(row, field_index, "最新价")
+        open_price = _get_price(row, field_index, "开盘价")
+        high = _get_price(row, field_index, "最高价")
+        low = _get_price(row, field_index, "最低价")
+        pre_close = _get_price(row, field_index, "昨收")
+        pre_settle = _get_price(row, field_index, "昨结")
+        settle = _get_price(row, field_index, "结算价")
+        avg_price = _get_price(row, field_index, "均价")
 
-        # 涨跌
-        change = (last_price - pre_close) / 10000
-        upper_limit = _get_float(row, field_index, "涨停价")
-        lower_limit = _get_float(row, field_index, "跌停价")
+        # 涨跌（涨跌额 = 最新价 - 昨收，与价格同数量级）
+        change = last_price - pre_close
+        upper_limit = _get_price(row, field_index, "涨停价")
+        lower_limit = _get_price(row, field_index, "跌停价")
 
         # 量仓
         volume = _get_int(row, field_index, "成交量")
-        turnover = _get_float(row, field_index, "成交额")
+        turnover = _get_price(row, field_index, "成交额")
         open_interest = _get_int(row, field_index, "今持仓")
         pre_open_interest = _get_int(row, field_index, "昨持仓")
 
         # 盘口
-        bid1_price = _get_float(row, field_index, "买1价")
+        bid1_price = _get_price(row, field_index, "买1价")
         bid1_volume = _get_int(row, field_index, "买1量")
-        ask1_price = _get_float(row, field_index, "卖1价")
+        ask1_price = _get_price(row, field_index, "卖1价")
         ask1_volume = _get_int(row, field_index, "卖1量")
 
         # 时间
@@ -122,6 +130,22 @@ def _get_str(row: list, field_index: dict[str, int], name: str) -> str:
     if 0 <= idx < len(row):
         return str(row[idx]) if row[idx] is not None else ""
     return ""
+
+
+def _get_price(row: list, field_index: dict[str, int], name: str) -> Decimal:
+    """获取价格字段的原始整数值，除以 10000 转为 Decimal 实际价格。
+
+    外部 API 价格 = 实际价格 ×10000 的整数。
+    """
+    idx = field_index.get(name, -1)
+    if 0 <= idx < len(row):
+        raw = row[idx]
+        if raw is not None and raw != "":
+            try:
+                return Decimal(str(raw)) / _PRICE_SCALE
+            except Exception:
+                pass
+    return Decimal("0")
 
 
 def _get_float(row: list, field_index: dict[str, int], name: str) -> float:

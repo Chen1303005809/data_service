@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 import httpx
 import pandas as pd
@@ -130,24 +131,24 @@ def _merge(ins_data: dict, price_data: dict) -> pd.DataFrame:
             "tick_size": ins.tick_size,
             "main_flag": ins.main_flag,
             # price 字段
-            "last_price": price.last_price if price else 0.0,
-            "open": price.open if price else 0.0,
-            "high": price.high if price else 0.0,
-            "low": price.low if price else 0.0,
-            "pre_close": price.pre_close if price else 0.0,
-            "pre_settle": price.pre_settle if price else 0.0,
-            "settle": price.settle if price else 0.0,
-            "avg_price": price.avg_price if price else 0.0,
-            "change": price.change if price else 0.0,
-            "upper_limit": price.upper_limit if price else 0.0,
-            "lower_limit": price.lower_limit if price else 0.0,
+            "last_price": price.last_price if price else Decimal("0"),
+            "open": price.open if price else Decimal("0"),
+            "high": price.high if price else Decimal("0"),
+            "low": price.low if price else Decimal("0"),
+            "pre_close": price.pre_close if price else Decimal("0"),
+            "pre_settle": price.pre_settle if price else Decimal("0"),
+            "settle": price.settle if price else Decimal("0"),
+            "avg_price": price.avg_price if price else Decimal("0"),
+            "change": price.change if price else Decimal("0"),
+            "upper_limit": price.upper_limit if price else Decimal("0"),
+            "lower_limit": price.lower_limit if price else Decimal("0"),
             "volume": price.volume if price else 0,
-            "turnover": price.turnover if price else 0.0,
+            "turnover": price.turnover if price else Decimal("0"),
             "open_interest": price.open_interest if price else 0,
             "pre_open_interest": price.pre_open_interest if price else 0,
-            "bid1_price": price.bid1_price if price else 0.0,
+            "bid1_price": price.bid1_price if price else Decimal("0"),
             "bid1_volume": price.bid1_volume if price else 0,
-            "ask1_price": price.ask1_price if price else 0.0,
+            "ask1_price": price.ask1_price if price else Decimal("0"),
             "ask1_volume": price.ask1_volume if price else 0,
             "trade_date": price.trade_date if price else "",
             "update_time": price.update_time if price else "",
@@ -172,7 +173,10 @@ def _ensure_columns(df: pd.DataFrame) -> None:
         "underlying_name", "exchange", "trade_date", "update_time", "fetched_at",
     ]
     float_cols = [
-        "strike", "tick_size", "last_price", "open", "high", "low",
+        "strike", "tick_size",
+    ]
+    decimal_cols = [
+        "last_price", "open", "high", "low",
         "pre_close", "pre_settle", "settle", "avg_price", "change",
         "upper_limit", "lower_limit", "turnover", "bid1_price", "ask1_price",
     ]
@@ -187,6 +191,9 @@ def _ensure_columns(df: pd.DataFrame) -> None:
     for col in float_cols:
         if col not in df.columns:
             df[col] = 0.0
+    for col in decimal_cols:
+        if col not in df.columns:
+            df[col] = Decimal("0")
     for col in int_cols:
         if col not in df.columns:
             df[col] = 0
