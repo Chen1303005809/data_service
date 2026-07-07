@@ -7,7 +7,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 
 class ProductType(str, Enum):
@@ -70,6 +70,17 @@ class PriceInfo(BaseModel):
     trade_date: str = ""                    # 交易日 YYYY-MM-DD
     update_time: str = ""                   # 交易所行情更新时间
     fetched_at: Optional[datetime] = None   # 服务拉取到价格的时间
+
+    # 序列化时 Decimal → float，确保 JSON 输出为数字而非字符串
+    @field_serializer(
+        "last_price", "open", "high", "low",
+        "pre_close", "pre_settle", "settle", "avg_price",
+        "change", "upper_limit", "lower_limit",
+        "turnover", "bid1_price", "ask1_price",
+        when_used="json",
+    )
+    def _serialize_decimal(self, v: Decimal) -> float:
+        return float(v)
 
 
 class ContractItem(BaseModel):
