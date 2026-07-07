@@ -45,7 +45,7 @@ def parse_price(price_data: dict) -> dict[str, PriceInfo]:
         avg_price = _get_float(row, field_index, "均价")
 
         # 涨跌
-        change = last_price - pre_close
+        change = (last_price - pre_close) / 10000
         upper_limit = _get_float(row, field_index, "涨停价")
         lower_limit = _get_float(row, field_index, "跌停价")
 
