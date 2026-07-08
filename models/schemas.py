@@ -34,7 +34,7 @@ class InsInfo(BaseModel):
     strike: float = 0.0                                    # 行权价，从 code 解析，期货为 0
     contract_multiplier: int = 1                           # pi.M: 合约乘数
     tick_size: float = 0.0                                 # pi.t / 10000: 最小变动价
-    main_flag: int = 0                                     # 主力标志（price API 主力标志回填）
+    main_flag: int = 0                                     # 主力标志：0=普通, 1=主力, 2=次主力（price API 回填）
 
 
 class PriceInfo(BaseModel):
@@ -111,6 +111,7 @@ class QueryParams(BaseModel):
         default=None,
         description="排序: price_asc, price_desc, strike_asc, strike_desc, expiry_asc, expiry_desc",
     )
+    main_flag: Optional[int] = Field(default=None, ge=0, le=2, description="主力标志：0=普通, 1=主力, 2=次主力")
     limit: int = Field(default=50, ge=1, le=500, description="返回条数上限")
     offset: int = Field(default=0, ge=0, description="分页偏移")
 

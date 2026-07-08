@@ -126,6 +126,9 @@ def _apply_filters(df: pd.DataFrame, params: QueryParams) -> pd.DataFrame:
     if params.price_le is not None:
         df = df[df["last_price"] <= params.price_le]
 
+    if params.main_flag is not None:
+        df = df[df["main_flag"] == params.main_flag]
+
     return df
 
 
