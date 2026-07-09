@@ -32,6 +32,19 @@ def mock_akshare():
         yield mock_ak
 
 
+@pytest.fixture
+def mock_akshare_today_empty():
+    """Mock: 今日/昨日均空，前天才有数据 → 验证日期回退。"""
+    with patch("syncer.parser.spot_parser.HAS_AKSHARE", True), \
+         patch("syncer.parser.spot_parser.ak") as mock_ak:
+        empty_df = pd.DataFrame(
+            [], columns=list(SAMPLE_SPOT_DATA.columns),
+        )
+        # 第 1 次（今天）和第 2 次（昨天）返回空，第 3 次起返回数据
+        mock_ak.futures_spot_price.side_effect = [empty_df, empty_df, SAMPLE_SPOT_DATA]
+        yield mock_ak
+
+
 class TestSpotParser:
     """测试 spot_parser.fetch_spot_records()。"""
 
@@ -89,6 +102,38 @@ class TestSpotParser:
         from syncer.parser.spot_parser import fetch_spot_records
         records = fetch_spot_records()
         assert records is None
+
+    def test_today_empty_falls_back_to_previous_day(self, mock_akshare_today_empty):
+        """今日数据空时，自动回退到上一个有数据的交易日。"""
+        from syncer.parser.spot_parser import fetch_spot_records
+        records = fetch_spot_records()
+        assert records is not None
+        assert len(records) == 2
+        # 验证调用了 3 次（今天+昨天+前天）
+        assert mock_akshare_today_empty.futures_spot_price.call_count == 3
+
+    def test_all_fallback_dates_empty_returns_none(self):
+        """7 天内所有日期都空 → 返回 None。"""
+        with patch("syncer.parser.spot_parser.HAS_AKSHARE", True), \
+             patch("syncer.parser.spot_parser.ak") as mock_ak:
+            empty_df = pd.DataFrame(
+                [], columns=list(SAMPLE_SPOT_DATA.columns),
+            )
+            mock_ak.futures_spot_price.return_value = empty_df
+            from syncer.parser.spot_parser import fetch_spot_records
+            assert fetch_spot_records() is None
+            # 应回退 8 次（0..7 共 8 个日期）
+            assert mock_ak.futures_spot_price.call_count == 8
+
+    def test_akshare_exception_returns_none_immediately(self):
+        """单次调用就抛异常 → 立即返回 None，不再回退。"""
+        with patch("syncer.parser.spot_parser.HAS_AKSHARE", True), \
+             patch("syncer.parser.spot_parser.ak") as mock_ak:
+            mock_ak.futures_spot_price.side_effect = Exception("network error")
+            from syncer.parser.spot_parser import fetch_spot_records
+            assert fetch_spot_records() is None
+            # 异常即终止，不继续回退
+            assert mock_ak.futures_spot_price.call_count == 1
 
 
 class TestSpotSync:
