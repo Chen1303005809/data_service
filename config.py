@@ -56,6 +56,14 @@ class Config:
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO")
     )
 
+    spot_enabled: bool = field(
+        default_factory=lambda: os.getenv("SPOT_ENABLED", False)
+    )
+
+    spot_refresh_interval_seconds: int = field(
+        default_factory=lambda: os.getenv("SPOT_REFRESH_INTERVAL_SECONDS", 14400)
+    )
+
     # K 线历史数据 TCP 服务
     kline_tcp_host: str = field(
         default_factory=lambda: os.getenv("KLINE_TCP_HOST", "212.64.88.94")
