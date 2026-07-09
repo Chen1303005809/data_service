@@ -66,6 +66,10 @@ class Config:
     kline_tcp_timeout: int = field(
         default_factory=lambda: int(os.getenv("KLINE_TCP_TIMEOUT", "10"))
     )
+    # TCP 网络瞬时故障的最大重试次数（不含首次请求），指数退避 0.1s * 2^n
+    kline_tcp_max_retries: int = field(
+        default_factory=lambda: int(os.getenv("KLINE_TCP_MAX_RETRIES", "3"))
+    )
 
     def validate(self) -> None:
         """校验必填配置项。"""
