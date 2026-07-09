@@ -31,7 +31,7 @@ router = APIRouter(tags=["contracts"])
     summary="查询合约数据",
 )
 async def get_contracts(
-    product_type: ProductType | None = Query(default=None, description="产品类型筛选: option / future，不传则查全部"),
+    product_type: list[ProductType] | None = Query(default=None, description="产品类型筛选（多值 OR）：option / future / spot。不传或为空则仅查期货"),
     code: list[str] | None = Query(default=None, description="合约代码列表，模糊匹配（支持多值 OR）"),
     underlying: str | None = Query(default=None, description="标的物代码"),
     option_type: str | None = Query(default=None, pattern="^[CP]$", description="C（看涨）/ P（看跌），仅期权有效"),

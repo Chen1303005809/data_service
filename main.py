@@ -20,7 +20,6 @@ from fastapi import FastAPI
 load_dotenv()
 
 from api.router import router       # noqa: E402
-from api.spot_router import spot_router  # noqa: E402
 from cache.redis_client import cache_client  # noqa: E402
 from config import CST, config      # noqa: E402
 from syncer.sync import fetch_contracts_and_sync, fetch_spot_and_sync  # noqa: E402
@@ -109,7 +108,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(router)
-app.include_router(spot_router)
 
 
 if __name__ == "__main__":

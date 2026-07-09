@@ -7,44 +7,62 @@ from datetime import datetime
 
 import pandas as pd
 
-from cache.redis_client import cache_client
+from cache.redis_client import CACHE_KEY_SPOT, cache_client
 from config import CST
 from models.schemas import ContractItem, InsInfo, PriceInfo, ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
 
 
-async def query(params: QueryParams, product_type: ProductType | None = None) -> QueryResponse:
+async def query(params: QueryParams, product_type: list[ProductType] | None = None) -> QueryResponse:
     """执行查询：缓存优先 → 实时兜底 → 过滤 → 排序 → 分页 → 返回响应。
 
-    1. 优先从 Redis / 本地缓存读取 DataFrame
-    2. 缓存不可用或为空时，实时拉取外部 API 兜底，拉取成功后回写缓存
-    3. 对数据进行筛选、排序、分页
-    4. 返回 QueryResponse
+    product_type 为多值列表（OR 匹配）；不传或为空时默认仅查期货（future）。
+    现货数据位于独立缓存键 spot:latest，仅当查询类型含 spot 时才读取合并。
     """
-    df = await cache_client.get_df()
+    # 解析要查询的产品类型集合；不传或为空 → 仅期货
+    types: set[str] = {t.value for t in product_type} if product_type else {"future"}
+
+    df = await cache_client.get_df()  # contracts:latest（期货/期权）
     stale = await cache_client.is_stale() or False
     cached_at = await cache_client.get_cached_at() or datetime.now(CST)
 
-    # --- 兜底：缓存不可用时实时拉取 ---
-    if df is None or df.empty:
-        logger.warning("Cache miss or empty, falling back to live fetch")
-        from syncer.sync import fetch_data, fetch_spot_data
-        df = await fetch_data()
-        spot_df = await fetch_spot_data()
-
+    # 仅当需要现货时才读取现货缓存并合并（默认仅期货时不触碰 spot 缓存）
+    if "spot" in types:
+        spot_df = await cache_client.get_df(CACHE_KEY_SPOT)
         if spot_df is not None and not spot_df.empty:
             if df is not None and not df.empty:
                 df = pd.concat([df, spot_df], ignore_index=True)
             else:
                 df = spot_df
 
-        if df is not None and not df.empty:
-            # 回写缓存（至少写本地），让后续请求受益
-            await cache_client.set_df(df)
+    # --- 兜底：缓存不可用时按需实时拉取 ---
+    if df is None or df.empty:
+        logger.warning("Cache miss or empty, falling back to live fetch")
+        from syncer.sync import fetch_data, fetch_spot_data
+        fetched_any = False
+        # 合约（期货/期权）
+        if types & {"option", "future"}:
+            contracts_df = await fetch_data()
+            if contracts_df is not None and not contracts_df.empty:
+                await cache_client.set_df(contracts_df, key_override="contracts:latest")
+                df = contracts_df
+                fetched_any = True
+        # 现货
+        if "spot" in types:
+            spot_df = await fetch_spot_data()
+            if spot_df is not None and not spot_df.empty:
+                await cache_client.set_df(spot_df, key_override="spot:latest")
+                df = (
+                    pd.concat([df, spot_df], ignore_index=True)
+                    if (df is not None and not df.empty)
+                    else spot_df
+                )
+                fetched_any = True
+        if fetched_any:
             cached_at = datetime.now(CST)
             stale = False
-            logger.info("Live fetch succeeded, wrote %d records to cache", len(df))
+            logger.info("Live fetch succeeded, wrote records to cache")
 
     # --- 最终仍无数据 ---
     if df is None or df.empty:
@@ -52,9 +70,8 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
 
     total_before = len(df)
 
-    # 产品类型筛选
-    if product_type is not None:
-        df = df[df["product_type"] == product_type.value]
+    # 产品类型筛选（按 types 集合 OR 匹配）
+    df = df[df["product_type"].isin(types)]
 
     # 通用过滤
     df = _apply_filters(df, params)

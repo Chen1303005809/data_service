@@ -59,15 +59,22 @@ def sample_df() -> pd.DataFrame:
 
 @pytest.fixture
 def client(sample_df):
-    """创建带 mock 缓存的 TestClient。"""
+    """创建带 mock 缓存的 TestClient。合约缓存命中，现货缓存为空。"""
+    empty_spot = sample_df.iloc[0:0].copy()  # 同列结构的空 DataFrame
+
+    async def _get_df(key: str = "contracts:latest"):
+        if key == "spot:latest":
+            return empty_spot
+        return sample_df.copy()
+
     with patch("cache.redis_client.cache_client.connect", new_callable=AsyncMock), \
          patch("cache.redis_client.cache_client.disconnect", new_callable=AsyncMock), \
-         patch("cache.redis_client.cache_client.get_df", new_callable=AsyncMock, return_value=sample_df.copy()), \
+         patch("cache.redis_client.cache_client.get_df", new_callable=AsyncMock, side_effect=_get_df), \
          patch("cache.redis_client.cache_client.get_cached_at", new_callable=AsyncMock), \
          patch("cache.redis_client.cache_client.is_stale", new_callable=AsyncMock, return_value=False), \
          patch("config.config.ins_api_url", ""), \
          patch("config.config.price_api_url", ""), \
-         patch("config.config.refresh_interval_seconds", 3600):
+         patch("config.config.contracts_refresh_interval_seconds", 3600):
         from main import app
         client = TestClient(app)
         yield client
@@ -76,8 +83,17 @@ def client(sample_df):
 class TestContractsEndpoint:
     """测试 GET /api/contracts。"""
 
-    def test_get_all_contracts(self, client):
+    def test_default_returns_futures_only(self, client):
+        """不传 product_type → 默认仅期货。"""
         resp = client.get("/api/contracts")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1  # 仅 IF2409
+        assert data["items"][0]["ins"]["product_type"] == "future"
+
+    def test_get_all_contracts(self, client):
+        """显式传 option+future → 返回全部合约。"""
+        resp = client.get("/api/contracts?product_type=option&product_type=future")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 3
@@ -98,7 +114,7 @@ class TestContractsEndpoint:
         assert data["items"][0]["ins"]["code"] == "IF2409"
 
     def test_filter_by_option_type(self, client):
-        resp = client.get("/api/contracts?option_type=C")
+        resp = client.get("/api/contracts?product_type=option&option_type=C")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
@@ -112,14 +128,14 @@ class TestContractsEndpoint:
         assert data["items"][0]["ins"]["underlying"] == "IF"
 
     def test_pagination(self, client):
-        resp = client.get("/api/contracts?limit=1&offset=1")
+        resp = client.get("/api/contracts?product_type=option&product_type=future&limit=1&offset=1")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
 
     def test_filter_by_multi_code(self, client):
         """多 code 查询：OR 逻辑。"""
-        resp = client.get("/api/contracts?code=IO2409-C&code=IF2409")
+        resp = client.get("/api/contracts?product_type=option&product_type=future&code=IO2409-C&code=IF2409")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 2  # 1 IO2409-C-4000 + 1 IF2409
@@ -134,7 +150,7 @@ class TestContractsEndpoint:
              patch("syncer.sync.fetch_data", new_callable=AsyncMock, return_value=None):
             # 清空缓存
             from cache.redis_client import cache_client
-            cache_client._local_df = None
+            cache_client._local = {}
             resp = client.get("/api/contracts")
             assert resp.status_code == 503
             assert "unavailable" in resp.json()["detail"].lower()

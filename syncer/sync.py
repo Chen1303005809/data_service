@@ -73,10 +73,6 @@ async def fetch_spot_data() -> pd.DataFrame | None:
     Returns:
         现货价格 DataFrame（与主表同列结构），失败或禁用时返回 None。
     """
-    if not config.spot_enabled:
-        logger.info("Spot price fetch disabled by config")
-        return None
-
     try:
         from syncer.parser.spot_parser import fetch_spot_records
 

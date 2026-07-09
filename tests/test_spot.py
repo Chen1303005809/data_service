@@ -95,25 +95,16 @@ class TestSpotSync:
     """测试 syncer/sync.py 中现货同步逻辑。"""
 
     def test_fetch_spot_data_returns_df(self, mock_akshare):
-        with patch("syncer.sync.config.spot_enabled", True):
-            from syncer.sync import fetch_spot_data
-            import asyncio
-            spot_df = asyncio.run(fetch_spot_data())
-            assert spot_df is not None
-            assert len(spot_df) == 2
-            assert all(spot_df["product_type"] == "spot")
-
-    def test_spot_disabled_returns_none(self):
-        with patch("syncer.sync.config.spot_enabled", False):
-            from syncer.sync import fetch_spot_data
-            import asyncio
-            result = asyncio.run(fetch_spot_data())
-            assert result is None
+        from syncer.sync import fetch_spot_data
+        import asyncio
+        spot_df = asyncio.run(fetch_spot_data())
+        assert spot_df is not None
+        assert len(spot_df) == 2
+        assert all(spot_df["product_type"] == "spot")
 
     def test_fetch_spot_and_sync_writes_to_spot_key(self, mock_akshare):
         """验证现货同步写入 spot:latest 缓存。"""
-        with patch("syncer.sync.config.spot_enabled", True), \
-             patch("syncer.sync.cache_client.set_df", new_callable=AsyncMock) as mock_set:
+        with patch("syncer.sync.cache_client.set_df", new_callable=AsyncMock) as mock_set:
             from syncer.sync import fetch_spot_and_sync
             import asyncio
             count = asyncio.run(fetch_spot_and_sync())
@@ -124,7 +115,7 @@ class TestSpotSync:
 
 
 class TestSpotAPI:
-    """现货 API 集成测试（GET /api/spot）。"""
+    """现货查询集成测试（GET /api/contracts?product_type=spot）。"""
 
     @pytest.fixture
     def spot_df(self, mock_akshare):
@@ -135,15 +126,22 @@ class TestSpotAPI:
 
     @pytest.fixture
     def client(self, spot_df):
-        """创建包含现货 mock 缓存的 TestClient。"""
+        """创建 TestClient：合约缓存为空，现货缓存命中。"""
         from datetime import datetime
         from config import CST
         mock_cached_at = datetime.now(CST)
+        empty_contracts = spot_df.iloc[0:0].copy()
+
+        async def _get_df(key: str = "contracts:latest"):
+            if key == "spot:latest":
+                return spot_df.copy()
+            return empty_contracts
 
         with patch("cache.redis_client.cache_client.connect", new_callable=AsyncMock), \
              patch("cache.redis_client.cache_client.disconnect", new_callable=AsyncMock), \
-             patch("cache.redis_client.cache_client.get_df", new_callable=AsyncMock, return_value=spot_df), \
+             patch("cache.redis_client.cache_client.get_df", new_callable=AsyncMock, side_effect=_get_df), \
              patch("cache.redis_client.cache_client.get_cached_at", new_callable=AsyncMock, return_value=mock_cached_at), \
+             patch("cache.redis_client.cache_client.is_stale", new_callable=AsyncMock, return_value=False), \
              patch("config.config.contracts_refresh_interval_seconds", 3600):
             from main import app
             from fastapi.testclient import TestClient
@@ -151,47 +149,44 @@ class TestSpotAPI:
             yield client
 
     def test_get_all_spot(self, client):
-        resp = client.get("/api/spot")
+        resp = client.get("/api/contracts?product_type=spot")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 2
 
     def test_filter_by_code(self, client):
-        resp = client.get("/api/spot?code=CU")
+        resp = client.get("/api/contracts?product_type=spot&code=CU")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
-        assert data["items"][0]["code"] == "SPOT_CU"
+        assert data["items"][0]["ins"]["code"] == "SPOT_CU"
 
-    def test_spot_clean_structure(self, client):
-        """现货响应只包含必要字段。"""
-        resp = client.get("/api/spot?limit=1")
+    def test_spot_contract_item_structure(self, client):
+        """现货返回统一 ContractItem 结构：ins + price 嵌套。"""
+        resp = client.get("/api/contracts?product_type=spot&limit=1")
         assert resp.status_code == 200
         item = resp.json()["items"][0]
-        # 现货应有字段
-        assert "code" in item
-        assert "spot_price" in item
-        assert "near_basis" in item
-        assert "dom_basis" in item
-        assert "trade_date" in item
-        # 不应有期货/期权字段
-        assert "strike" not in item
-        assert "volume" not in item
-        assert "open_interest" not in item
+        assert item["ins"]["code"] == "SPOT_RB"
+        assert item["ins"]["product_type"] == "spot"
+        # 现货价落在 price.last_price，基差在 price.near_basis/dom_basis
+        assert item["price"]["last_price"] == 3500.0
+        assert item["price"]["near_basis"] == 10.0
+        assert item["price"]["dom_basis"] == 20.0
+        assert item["price"]["trade_date"] == "20260706"
 
     def test_spot_pagination(self, client):
-        resp = client.get("/api/spot?limit=1&offset=1")
+        resp = client.get("/api/contracts?product_type=spot&limit=1&offset=1")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
-        assert data["items"][0]["code"] == "SPOT_CU"
+        assert data["items"][0]["ins"]["code"] == "SPOT_CU"
 
     def test_spot_price_filter(self, client):
-        resp = client.get("/api/spot?price_ge=10000")
+        resp = client.get("/api/contracts?product_type=spot&price_ge=10000")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
-        assert data["items"][0]["spot_price"] == 72000.0
+        assert data["items"][0]["price"]["last_price"] == 72000.0
 
 
 class TestProductTypeEnum:

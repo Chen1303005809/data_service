@@ -34,8 +34,13 @@ class Config:
     cache_ttl_seconds: int = field(
         default_factory=lambda: int(os.getenv("CACHE_TTL_SECONDS", "300"))
     )
-    refresh_interval_seconds: int = field(
-        default_factory=lambda: int(os.getenv("REFRESH_INTERVAL_SECONDS", "60"))
+    # 合约（期货/期权）刷新间隔（秒），默认 10 秒
+    contracts_refresh_interval_seconds: int = field(
+        default_factory=lambda: int(os.getenv("CONTRACTS_REFRESH_INTERVAL_SECONDS", "10"))
+    )
+    # 现货（akshare）刷新间隔（秒），默认 4 小时
+    spot_refresh_interval_seconds: int = field(
+        default_factory=lambda: int(os.getenv("SPOT_REFRESH_INTERVAL_SECONDS", "14400"))
     )
     # 分页
     max_limit: int = field(
@@ -54,14 +59,6 @@ class Config:
     # 日志
     log_level: str = field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO")
-    )
-
-    spot_enabled: bool = field(
-        default_factory=lambda: os.getenv("SPOT_ENABLED", False)
-    )
-
-    spot_refresh_interval_seconds: int = field(
-        default_factory=lambda: os.getenv("SPOT_REFRESH_INTERVAL_SECONDS", 14400)
     )
 
     # K 线历史数据 TCP 服务
@@ -87,8 +84,10 @@ class Config:
             raise ValueError("PRICE_API_URL is required but not set")
         if self.cache_ttl_seconds <= 0:
             raise ValueError("CACHE_TTL_SECONDS must be positive")
-        if self.refresh_interval_seconds <= 0:
-            raise ValueError("REFRESH_INTERVAL_SECONDS must be positive")
+        if self.contracts_refresh_interval_seconds <= 0:
+            raise ValueError("CONTRACTS_REFRESH_INTERVAL_SECONDS must be positive")
+        if self.spot_refresh_interval_seconds <= 0:
+            raise ValueError("SPOT_REFRESH_INTERVAL_SECONDS must be positive")
         if self.max_limit <= 0:
             raise ValueError("MAX_LIMIT must be positive")
         if self.default_limit <= 0 or self.default_limit > self.max_limit:
