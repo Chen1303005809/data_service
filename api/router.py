@@ -1,14 +1,23 @@
-"""API 路由：GET /api/contracts。"""
+"""API 路由：GET /api/contracts, GET /api/kline。"""
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from config import config
 from engine.filter import DataUnavailableError, query as run_query
+from kline.client import (
+    ConnectionError as KlineConnectionError,
+    ConnectionTimeoutError,
+    KlineError,
+    ProtocolError,
+    RemoteError,
+    kline_client,
+)
+from kline.models import KlineQueryParams, KlineResponse
 from models.schemas import ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
@@ -68,3 +77,56 @@ async def get_contracts(
 async def health() -> dict[str, str]:
     """简单健康检查端点。"""
     return {"status": "ok"}
+
+
+@router.get(
+    "/api/kline",
+    response_model=KlineResponse,
+    summary="查询 K 线历史数据",
+)
+async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
+    """查询期货 K 线历史数据。默认返回日线，最多往前一周。"""
+    from datetime import datetime
+
+    date_format = "%Y%m%d"
+    start, end = params.resolve_dates()
+
+    # 日期范围校验
+    start_dt = datetime.strptime(start, date_format)
+    end_dt = datetime.strptime(end, date_format)
+    if start_dt > end_dt:
+        raise HTTPException(
+            status_code=422,
+            detail="start_date must not be later than end_date",
+        )
+    if (end_dt - start_dt).days > 7:
+        raise HTTPException(
+            status_code=422,
+            detail="date range must not exceed 7 days",
+        )
+
+    request_body = {
+        "GlobalID": 0,
+        "ExchangeID": "",
+        "InstrumentID": params.symbol,
+        "CycleType": params.cycle_type,
+        "StartDate": int(start),
+        "StartTime": 0,
+        "EndDate": int(end),
+        "EndTime": 0,
+        "KLineType": params.kline_type,
+    }
+    try:
+        raw = await kline_client.fetch(request_body)
+        return KlineResponse.model_validate(raw)
+    except RemoteError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Remote server error [{e.code}]: {e.message}",
+        )
+    except ConnectionTimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except (KlineConnectionError, ProtocolError) as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except KlineError as e:
+        raise HTTPException(status_code=500, detail=str(e))

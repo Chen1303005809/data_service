@@ -56,6 +56,21 @@ class Config:
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO")
     )
 
+    # K 线历史数据 TCP 服务
+    kline_tcp_host: str = field(
+        default_factory=lambda: os.getenv("KLINE_TCP_HOST", "212.64.88.94")
+    )
+    kline_tcp_port: int = field(
+        default_factory=lambda: int(os.getenv("KLINE_TCP_PORT", "6666"))
+    )
+    kline_tcp_timeout: int = field(
+        default_factory=lambda: int(os.getenv("KLINE_TCP_TIMEOUT", "10"))
+    )
+    # TCP 网络瞬时故障的最大重试次数（不含首次请求），指数退避 0.1s * 2^n
+    kline_tcp_max_retries: int = field(
+        default_factory=lambda: int(os.getenv("KLINE_TCP_MAX_RETRIES", "3"))
+    )
+
     def validate(self) -> None:
         """校验必填配置项。"""
         if not self.ins_api_url:
