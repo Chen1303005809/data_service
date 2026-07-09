@@ -14,6 +14,7 @@ class ProductType(str, Enum):
     """产品类型，用于内部路由。"""
     OPTION = "option"
     FUTURE = "future"
+    SPOT = "spot"
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,9 @@ class PriceInfo(BaseModel):
     trade_date: str = ""                    # 交易日 YYYY-MM-DD
     update_time: str = ""                   # 交易所行情更新时间
     fetched_at: Optional[datetime] = None   # 服务拉取到价格的时间
+    # 现货基差（akshare 现货数据专用）
+    near_basis: Decimal = Decimal("0")     # 近月基差 = 现货价 - 近月合约价
+    dom_basis: Decimal = Decimal("0")      # 主力基差 = 现货价 - 主力合约价
 
     # 序列化时 Decimal → float，确保 JSON 输出为数字而非字符串
     @field_serializer(
@@ -77,6 +81,7 @@ class PriceInfo(BaseModel):
         "pre_close", "pre_settle", "settle", "avg_price",
         "change", "upper_limit", "lower_limit",
         "turnover", "bid1_price", "ask1_price",
+        "near_basis", "dom_basis",
         when_used="json",
     )
     def _serialize_decimal(self, v: Decimal) -> float:

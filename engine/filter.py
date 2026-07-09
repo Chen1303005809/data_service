@@ -29,8 +29,15 @@ async def query(params: QueryParams, product_type: ProductType | None = None) ->
     # --- 兜底：缓存不可用时实时拉取 ---
     if df is None or df.empty:
         logger.warning("Cache miss or empty, falling back to live fetch")
-        from syncer.sync import fetch_data
+        from syncer.sync import fetch_data, fetch_spot_data
         df = await fetch_data()
+        spot_df = await fetch_spot_data()
+
+        if spot_df is not None and not spot_df.empty:
+            if df is not None and not df.empty:
+                df = pd.concat([df, spot_df], ignore_index=True)
+            else:
+                df = spot_df
 
         if df is not None and not df.empty:
             # 回写缓存（至少写本地），让后续请求受益
@@ -172,6 +179,8 @@ def _row_to_item(row: pd.Series) -> ContractItem:
             trade_date=str(row.get("trade_date", "")),
             update_time=str(row.get("update_time", "")),
             fetched_at=_parse_fetched_at(row.get("fetched_at", "")),
+            near_basis=row.get("near_basis", 0),
+            dom_basis=row.get("dom_basis", 0),
         ),
     )
 

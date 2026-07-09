@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from decimal import Decimal
 
@@ -66,19 +67,60 @@ async def fetch_data() -> pd.DataFrame | None:
         return None
 
 
-async def fetch_and_sync() -> int:
-    """拉取 /ins 和 /price，合并为统一 DataFrame 并写入缓存。
+async def fetch_spot_data() -> pd.DataFrame | None:
+    """用 asyncio.to_thread 包裹 akshare 同步调用。
 
     Returns:
-        合并后的记录数。失败时返回 -1。
+        现货价格 DataFrame（与主表同列结构），失败或禁用时返回 None。
+    """
+    if not config.spot_enabled:
+        logger.info("Spot price fetch disabled by config")
+        return None
+
+    try:
+        from syncer.parser.spot_parser import fetch_spot_records
+
+        records = await asyncio.to_thread(fetch_spot_records)
+        if not records:
+            return None
+        df = pd.DataFrame(records)
+        _ensure_columns(df)
+        logger.info("Fetched %d spot price records", len(df))
+        return df
+    except Exception:
+        logger.exception("Failed to fetch spot data")
+        return None
+
+
+async def fetch_contracts_and_sync() -> int:
+    """仅拉取 /ins + /price 写入缓存（contracts:latest）。
+
+    Returns:
+        记录数。失败时返回 -1。
     """
     df = await fetch_data()
     if df is None or df.empty:
-        logger.warning("fetch_and_sync: no data to cache")
+        logger.warning("fetch_contracts_and_sync: no data to cache")
         return -1
 
-    await cache_client.set_df(df)
-    logger.info("Synced %d records to cache", len(df))
+    await cache_client.set_df(df, key_override="contracts:latest")
+    logger.info("Synced %d contract records to cache", len(df))
+    return len(df)
+
+
+async def fetch_spot_and_sync() -> int:
+    """仅拉取 akshare 现货数据写入缓存（spot:latest）。
+
+    Returns:
+        记录数。失败时返回 -1。
+    """
+    df = await fetch_spot_data()
+    if df is None or df.empty:
+        logger.warning("fetch_spot_and_sync: no spot data to cache")
+        return -1
+
+    await cache_client.set_df(df, key_override="spot:latest")
+    logger.info("Synced %d spot records to cache", len(df))
     return len(df)
 
 
@@ -173,7 +215,7 @@ def _ensure_columns(df: pd.DataFrame) -> None:
         "underlying_name", "exchange", "trade_date", "update_time", "fetched_at",
     ]
     float_cols = [
-        "strike", "tick_size",
+        "strike", "tick_size", "near_basis", "dom_basis",
     ]
     decimal_cols = [
         "last_price", "open", "high", "low",
