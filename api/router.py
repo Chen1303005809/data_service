@@ -18,6 +18,7 @@ from kline.client import (
     kline_client,
 )
 from kline.models import KlineQueryParams, KlineResponse
+from kline.symbol_normalizer import normalize_symbol
 from models.schemas import ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
     request_body = {
         "GlobalID": 0,
         "ExchangeID": "",
-        "InstrumentID": params.symbol,
+        "InstrumentID": normalize_symbol(params.symbol),
         "CycleType": params.cycle_type,
         "StartDate": int(start),
         "StartTime": 0,
