@@ -105,6 +105,41 @@ class TestFilterEngine:
             QueryParams(strike_ge=5000, strike_le=4000)
 
 
+class TestQueryParamsNormalization:
+    """QueryParams 字段大小写归一化（LLM 调用方兼容）。"""
+
+    def test_option_type_lowercase_normalized(self):
+        assert QueryParams(option_type="c").option_type == "C"
+        assert QueryParams(option_type="p").option_type == "P"
+
+    def test_option_type_invalid(self):
+        with pytest.raises(ValueError, match="option_type must be C or P"):
+            QueryParams(option_type="x")
+
+    def test_underlying_lowercase_normalized(self):
+        assert QueryParams(underlying="io").underlying == "IO"
+        assert QueryParams(underlying="if").underlying == "IF"
+
+    def test_sort_normalization(self):
+        """sort 归一化：接受多种大小写与分隔符写法。"""
+        assert QueryParams(sort="PRICE_ASC").sort == "price_asc"
+        assert QueryParams(sort="Price_Asc").sort == "price_asc"
+        assert QueryParams(sort="price-asc").sort == "price_asc"
+        assert QueryParams(sort="PriceASC").sort == "price_asc"
+        assert QueryParams(sort="STRIKE_DESC").sort == "strike_desc"
+        assert QueryParams(sort="expiry asc").sort == "expiry_asc"
+
+    def test_sort_invalid(self):
+        with pytest.raises(ValueError, match="sort must be one of"):
+            QueryParams(sort="volume_asc")
+
+    def test_none_fields_unchanged(self):
+        p = QueryParams()
+        assert p.option_type is None
+        assert p.underlying is None
+        assert p.sort is None
+
+
 class TestRowToItem:
     """测试 _row_to_item 嵌套结构组装。"""
 

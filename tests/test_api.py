@@ -120,12 +120,54 @@ class TestContractsEndpoint:
         assert data["total"] == 1
         assert data["items"][0]["ins"]["option_type"] == "C"
 
+    def test_filter_by_option_type_lowercase(self, client):
+        """option_type 大小写不敏感：'c' 等同 'C'。"""
+        resp = client.get("/api/contracts?product_type=option&option_type=c")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["ins"]["option_type"] == "C"
+
     def test_filter_by_underlying(self, client):
         resp = client.get("/api/contracts?underlying=IF")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["ins"]["underlying"] == "IF"
+
+    def test_filter_by_underlying_lowercase(self, client):
+        """underlying 大小写不敏感：'if' 等同 'IF'。"""
+        resp = client.get("/api/contracts?underlying=if")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["ins"]["underlying"] == "IF"
+
+    def test_product_type_mixed_case(self, client):
+        """product_type 大小写不敏感：'Option' 等同 'option'。"""
+        resp = client.get("/api/contracts?product_type=Option")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert all(item["ins"]["product_type"] == "option" for item in data["items"])
+
+    def test_sort_uppercase(self, client):
+        """sort 大小写与分隔符不敏感：'PRICE_ASC'、'price-asc'、'PriceASC' 都被接受。"""
+        for sort_param in ("PRICE_ASC", "price-asc", "PriceASC", "strike_desc"):
+            resp = client.get(f"/api/contracts?product_type=option&sort={sort_param}")
+            assert resp.status_code == 200, f"sort={sort_param} should be accepted"
+            data = resp.json()
+            assert data["total"] == 2
+            prices = [item["price"]["last_price"] for item in data["items"]]
+            expected_asc = sort_param.lower().replace("-", "_").endswith("asc")
+            if expected_asc:
+                assert prices == sorted(prices)
+            else:
+                assert prices == sorted(prices, reverse=True)
+
+    def test_invalid_option_type(self, client):
+        resp = client.get("/api/contracts?option_type=X")
+        assert resp.status_code == 422
 
     def test_pagination(self, client):
         resp = client.get("/api/contracts?product_type=option&product_type=future&limit=1&offset=1")

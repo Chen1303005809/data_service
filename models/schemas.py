@@ -7,14 +7,30 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 
 class ProductType(str, Enum):
-    """产品类型，用于内部路由。"""
+    """产品类型，用于内部路由。大小写不敏感（option/Option/OPTION 均接受）。"""
     OPTION = "option"
     FUTURE = "future"
     SPOT = "spot"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "ProductType | None":
+        if isinstance(value, str):
+            v = value.strip().lower()
+            for member in cls:
+                if member.value == v:
+                    return member
+        return None
+
+
+ALLOWED_SORT = frozenset({
+    "price_asc", "price_desc",
+    "strike_asc", "strike_desc",
+    "expiry_asc", "expiry_desc",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +149,47 @@ class QueryParams(BaseModel):
             if self.price_ge > self.price_le:
                 raise ValueError("price_ge must be <= price_le")
         return self
+
+    @field_validator("option_type")
+    @classmethod
+    def _normalize_option_type(cls, v: str | None) -> str | None:
+        """option_type 归一为大写 C/P。"""
+        if v is None:
+            return v
+        v = v.strip().upper()
+        if v not in ("C", "P"):
+            raise ValueError("option_type must be C or P (case-insensitive)")
+        return v
+
+    @field_validator("underlying")
+    @classmethod
+    def _normalize_underlying(cls, v: str | None) -> str | None:
+        """underlying 归一为大写（国内品种代码不区分大小写）。"""
+        if v is None:
+            return v
+        return v.strip().upper()
+
+    @field_validator("sort")
+    @classmethod
+    def _normalize_sort(cls, v: str | None) -> str | None:
+        """sort 归一为小写下划线格式。接受 Price_ASC / price-asc / PriceASC。"""
+        if v is None:
+            return v
+        raw = v.strip().lower()
+        normalized = raw.replace("-", "_").replace(" ", "_")
+        if normalized in ALLOWED_SORT:
+            return normalized
+        # 兼容无下划线写法（PriceASC → price_asc）
+        bare = raw.replace("-", "").replace("_", "").replace(" ", "")
+        for suffix in ("asc", "desc"):
+            if bare.endswith(suffix):
+                field = bare[: -len(suffix)]
+                if field in ("price", "strike", "expiry"):
+                    return f"{field}_{suffix}"
+                break
+        raise ValueError(
+            f"sort must be one of {sorted(ALLOWED_SORT)} (case/separator-insensitive)"
+        )
 
     @property
     def sort_field(self) -> Optional[str]:
