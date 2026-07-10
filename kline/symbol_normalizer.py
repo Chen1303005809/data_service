@@ -11,7 +11,7 @@ import json
 import re
 from pathlib import Path
 
-_DICT_PATH = Path(__file__).resolve().parent.parent / "data_example" / "symbols_dict.json"
+_DICT_PATH = Path(__file__).resolve().parent / "symbols_dict.json"
 
 # 品种代码 → 规范写法。模块加载时构建一次。
 _CASE_INSENSITIVE_INDEX: dict[str, str] = {}
