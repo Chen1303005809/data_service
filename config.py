@@ -50,8 +50,9 @@ class Config:
         default_factory=lambda: int(os.getenv("DEFAULT_LIMIT", "50"))
     )
     # 产品类型映射（/ins 中 pi.pt 字段的值，以样例注释为准：1=期货, 2=期权, 6=个股期权）
+    # pt=2 与 pt=6 都映射为内部 "option"（HO/IO/MO 等个股期权也归入期权）
     option_types: set[int] = field(
-        default_factory=lambda: _parse_int_list(os.getenv("OPTION_TYPES", "2"))
+        default_factory=lambda: _parse_int_list(os.getenv("OPTION_TYPES", "2,6"))
     )
     future_types: set[int] = field(
         default_factory=lambda: _parse_int_list(os.getenv("FUTURE_TYPES", "1"))
