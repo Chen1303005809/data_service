@@ -21,6 +21,7 @@ from kline.client import (
 )
 from kline.models import KlineQueryParams, KlineResponse
 from kline.symbol_normalizer import normalize_symbol
+from engine.expiry_warning import warning_from_symbol
 from models.schemas import ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,9 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
     }
     try:
         raw = await kline_client.fetch(request_body)
-        return KlineResponse.model_validate(raw)
+        resp = KlineResponse.model_validate(raw)
+        resp.warning = warning_from_symbol(normalize_symbol(params.symbol))
+        return resp
     except RemoteError as e:
         raise HTTPException(
             status_code=502,

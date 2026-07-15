@@ -69,5 +69,6 @@ class KlineResponse(BaseModel):
     end_date: int = Field(alias="ED")
     end_time: int = Field(alias="ET")
     data: list[KlineItem]
+    warning: str | None = None
 
     model_config = {"populate_by_name": True}

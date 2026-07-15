@@ -9,6 +9,7 @@ import pandas as pd
 
 from cache.redis_client import CACHE_KEY_SPOT, cache_client
 from config import CST
+from engine.expiry_warning import warning_from_expiry
 from models.schemas import ContractItem, InsInfo, PriceInfo, ProductType, QueryParams, QueryResponse
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,15 @@ async def query(params: QueryParams, product_type: list[ProductType] | None = No
 
     items = [_row_to_item(row) for _, row in df.iterrows()]
 
+    warnings: list[str] = []
+    for it in items:
+        if it.ins.product_type == "spot":
+            continue
+        w = warning_from_expiry(it.ins.expiry, it.ins.code)
+        if w:
+            it.warning = w
+            warnings.append(it.ins.code)
+
     logger.debug(
         "Query: %d → %d results (product_type=%s, stale=%s)",
         total_before,
@@ -108,6 +118,7 @@ async def query(params: QueryParams, product_type: list[ProductType] | None = No
         offset=params.offset,
         cached_at=cached_at,
         stale=stale,
+        warnings=warnings,
         items=items,
     )
 

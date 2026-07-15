@@ -109,6 +109,7 @@ class ContractItem(BaseModel):
 
     ins: InsInfo
     price: PriceInfo
+    warning: Optional[str] = None
     # 预留: kline: Optional[KlineInfo] = None
 
 
@@ -217,4 +218,5 @@ class QueryResponse(BaseModel):
     offset: int
     cached_at: datetime
     stale: bool = False
+    warnings: list[str] = []
     items: list[ContractItem]
