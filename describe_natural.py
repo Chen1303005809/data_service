@@ -144,6 +144,10 @@ def _describe_contracts(data: dict, max_items: int) -> str:
 
     lines = [f"共查询到{total}条{type_label}合约数据。"]
 
+    cached_at = data.get("cached_at")
+    if cached_at:
+        lines.append(f"数据获取时间：{_format_datetime(cached_at)}。")
+
     show = items[:max_items]
     for idx, item in enumerate(show, 1):
         lines.append(_contract_item_text(item, idx))
@@ -292,6 +296,18 @@ def _format_money(v) -> str:
     if f == int(f):
         return f"{int(f)}.00"
     return f"{f:.2f}"
+
+
+def _format_datetime(v) -> str:
+    """格式化时间为 'YYYY-MM-DD HH:MM:SS'。接受 ISO 字符串或 datetime。"""
+    if not v:
+        return ""
+    s = str(v).replace("T", " ")
+    if "+" in s:
+        s = s.split("+", 1)[0]
+    elif s.endswith("Z"):
+        s = s[:-1]
+    return s.strip()
 
 
 if __name__ == "__main__":
