@@ -174,3 +174,12 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
             type(e).__name__, params.symbol, start, end, params.cycle_type, e,
         )
         raise HTTPException(status_code=500, detail=str(e))
+    except ValidationError as e:
+        logger.error(
+            "kline validation error symbol=%s range=%s..%s cycle=%d err=%s",
+            params.symbol, start, end, params.cycle_type, e,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Invalid response from upstream server",
+        )

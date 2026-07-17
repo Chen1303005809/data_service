@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from config import CST
 
@@ -72,3 +72,11 @@ class KlineResponse(BaseModel):
     warning: str | None = None
 
     model_config = {"populate_by_name": True}
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def _ensure_data_list(cls, v: object) -> object:
+        """上游偶发返回 data=null/空字符串，归一为空列表避免 ValidationError。"""
+        if v is None or v == "":
+            return []
+        return v
