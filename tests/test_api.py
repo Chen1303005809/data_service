@@ -67,9 +67,15 @@ def client(sample_df):
             return empty_spot
         return sample_df.copy()
 
+    async def _exists(key: str = "contracts:latest"):
+        if key == "spot:latest":
+            return False
+        return True
+
     with patch("cache.redis_client.cache_client.connect", new_callable=AsyncMock), \
          patch("cache.redis_client.cache_client.disconnect", new_callable=AsyncMock), \
          patch("cache.redis_client.cache_client.get_df", new_callable=AsyncMock, side_effect=_get_df), \
+         patch("cache.redis_client.cache_client.exists", new_callable=AsyncMock, side_effect=_exists), \
          patch("cache.redis_client.cache_client.get_cached_at", new_callable=AsyncMock), \
          patch("cache.redis_client.cache_client.is_stale", new_callable=AsyncMock, return_value=False), \
          patch("config.config.ins_api_url", ""), \
@@ -222,4 +228,25 @@ class TestHealth:
     def test_health(self, client):
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["checks"]["contracts_cache"] == "ok"
+        assert data["checks"]["spot_cache"] == "empty"
+        assert data["checks"]["scheduler"] in ("running", "stopped")
+
+    def test_health_503_when_contracts_cache_empty(self):
+        """合约缓存空时返回 503。"""
+        async def _all_false(key: str = "contracts:latest"):
+            return False
+
+        with patch("cache.redis_client.cache_client.connect", new_callable=AsyncMock), \
+             patch("cache.redis_client.cache_client.disconnect", new_callable=AsyncMock), \
+             patch("cache.redis_client.cache_client.exists", new_callable=AsyncMock, side_effect=_all_false), \
+             patch("config.config.ins_api_url", ""), \
+             patch("config.config.price_api_url", ""), \
+             patch("config.config.contracts_refresh_interval_seconds", 3600):
+            from main import app
+            client = TestClient(app)
+            resp = client.get("/health")
+            assert resp.status_code == 503
+            assert resp.json()["status"] == "unavailable"

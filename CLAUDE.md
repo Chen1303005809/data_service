@@ -42,7 +42,6 @@ FastAPI 行情数据服务:每 10s 拉合约、每 4h 拉现货 → Redis(parque
 - `cache.redis_client.cache_client` — 缓存客户端
 - `kline.client.kline_client` — K线 TCP 客户端
 - `kline.symbol_normalizer._CASE_INSENSITIVE_INDEX` — 品种代码索引
-- `syncer.parser.price_parser.get_main_flags / reset_main_flags` — 主力标记状态
 
 ## 改动时的注意事项
 

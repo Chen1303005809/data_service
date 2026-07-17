@@ -331,3 +331,26 @@ async def test_fetch_protocol_error_not_retried(fast_retry_sleep):
         assert call["n"] == 1  # 没有重试
     finally:
         await server.stop()
+
+
+# ---------------------------------------------------------------------------
+# 退避公式
+# ---------------------------------------------------------------------------
+
+def test_compute_backoff_exponential(monkeypatch):
+    """jitter 固定为 0 时，退避严格等于 base * 2^attempt。"""
+    monkeypatch.setattr("kline.client.random.uniform", lambda _a, _b: 0.0)
+    assert KlineClient.compute_backoff(0, 1.0) == pytest.approx(1.0)
+    assert KlineClient.compute_backoff(1, 1.0) == pytest.approx(2.0)
+    assert KlineClient.compute_backoff(2, 1.0) == pytest.approx(4.0)
+    assert KlineClient.compute_backoff(3, 1.0) == pytest.approx(8.0)
+
+
+def test_compute_backoff_within_jitter_range():
+    """默认 jitter 时，delay 落在 [base*2^attempt, base*2^attempt + base] 内。"""
+    base = 1.0
+    for attempt in range(4):
+        delay = KlineClient.compute_backoff(attempt, base)
+        lower = base * (2 ** attempt)
+        upper = lower + base
+        assert lower <= delay <= upper

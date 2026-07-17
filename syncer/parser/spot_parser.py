@@ -18,6 +18,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
+from config import CST
+
 logger = logging.getLogger(__name__)
 
 # akshare 可选依赖：未安装时 HAS_AKSHARE=False，现货数据不可用但不影响合约流程
@@ -71,7 +73,7 @@ def _fetch_with_fallback():
     时该日会返回 0 行并打 warning。返回第一个有数据的交易日（最多向前
     回退 7 天，覆盖一个完整长假）。异常或全部为空返回 None。
     """
-    today = datetime.now()
+    today = datetime.now(CST)
     for offset in range(_MAX_FALLBACK_DAYS + 1):
         date_str = (today - timedelta(days=offset)).strftime("%Y%m%d")
         try:

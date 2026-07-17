@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import struct
 import time
 import zlib
@@ -324,11 +325,13 @@ class KlineClient:
         port: int,
         timeout: float = 10.0,
         max_retries: int = 3,
+        retry_base_delay: float = 1.0,
     ) -> None:
         self._host = host
         self._port = port
         self._timeout = timeout
         self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
 
     @property
     def host(self) -> str:
@@ -337,6 +340,11 @@ class KlineClient:
     @property
     def port(self) -> int:
         return self._port
+
+    @staticmethod
+    def compute_backoff(attempt: int, base_delay: float) -> float:
+        """指数退避 + 抖动：base * 2^attempt + uniform(0, base)。"""
+        return base_delay * (2 ** attempt) + random.uniform(0, base_delay)
 
     async def fetch(self, request_body: dict) -> dict:
         """发送 K 线查询请求并返回解析后的 JSON 响应。
@@ -366,11 +374,12 @@ class KlineClient:
                 last_exc = exc
                 if attempt >= self._max_retries:
                     break
-                delay = 0.1 * (2 ** attempt)  # 0.1s, 0.2s, 0.4s, ...
+                delay = self.compute_backoff(attempt, self._retry_base_delay)
                 logger.warning(
-                    "kline attempt %d/%d failed (%s), retrying in %.1fs",
+                    "kline attempt %d/%d failed (%s: %s), retrying in %.2fs",
                     attempt + 1,
                     self._max_retries + 1,
+                    type(exc).__name__,
                     exc,
                     delay,
                 )
@@ -392,6 +401,16 @@ class KlineClient:
 
         # 重试耗尽
         assert last_exc is not None
+        logger.error(
+            "kline request exhausted all %d attempts host=%s:%d req_id=%d "
+            "last_error=%s: %s",
+            self._max_retries + 1,
+            self._host,
+            self._port,
+            req_id,
+            type(last_exc).__name__,
+            last_exc,
+        )
         raise last_exc
 
 
@@ -401,4 +420,5 @@ kline_client = KlineClient(
     port=config.kline_tcp_port,
     timeout=config.kline_tcp_timeout,
     max_retries=config.kline_tcp_max_retries,
+    retry_base_delay=config.kline_tcp_retry_base_delay,
 )

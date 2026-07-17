@@ -31,22 +31,56 @@ import pandas as pd
 from cache.redis_client import cache_client
 from config import config
 from syncer.parser.ins_parser import parse_ins
-from syncer.parser.price_parser import get_main_flags, parse_price, reset_main_flags
+from syncer.parser.price_parser import parse_price
 
 logger = logging.getLogger(__name__)
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient, url: str, max_retries: int
+) -> httpx.Response:
+    """单个 POST 请求 + 指数退避重试。
+
+    重试条件：网络瞬时故障（超时、连接错误）、服务端 5xx。
+    2xx/4xx 直接返回（4xx 由调用方 raise_for_status 处理）。
+    """
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            resp = await client.post(url)
+            if resp.status_code < 500:
+                return resp
+            last_exc = httpx.HTTPStatusError(
+                f"server error {resp.status_code}",
+                request=resp.request,
+                response=resp,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last_exc = exc
+        if attempt >= max_retries:
+            assert last_exc is not None
+            raise last_exc
+        delay = 0.1 * (2 ** attempt)
+        logger.warning(
+            "POST %s failed (attempt %d/%d), retrying in %.1fs",
+            url, attempt + 1, max_retries + 1, delay,
+        )
+        await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")  # pragma: no cover
 
 
 async def fetch_data() -> pd.DataFrame | None:
     """实时拉取 /ins 和 /price 并合并为 DataFrame（不写缓存）。
 
     供缓存不可用时的兜底调用，也供 fetch_and_sync 复用。
+    网络瞬时故障和服务端 5xx 会指数退避自动重试；4xx 不重试。
     """
     logger.info("Live-fetching data from external APIs...")
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             ins_resp, price_resp = await asyncio_compat_gather(
-                client.post(config.ins_api_url),
-                client.post(config.price_api_url),
+                _post_with_retry(client, config.ins_api_url, config.contracts_max_retries),
+                _post_with_retry(client, config.price_api_url, config.contracts_max_retries),
             )
 
         ins_resp.raise_for_status()
@@ -136,10 +170,8 @@ def _merge(ins_data: dict, price_data: dict) -> pd.DataFrame:
     未匹配到价格的合约，价格字段填默认值。
     """
     # 解析两方数据
-    reset_main_flags()
     ins_records = parse_ins(ins_data)
-    price_map = parse_price(price_data)
-    main_flags = get_main_flags()
+    price_map, main_flags = parse_price(price_data)
 
     if not ins_records:
         logger.warning("/ins returned no contracts")

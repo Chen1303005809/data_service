@@ -100,6 +100,18 @@ class CacheClient:
                 pass
         return None
 
+    async def exists(self, key: str = CACHE_KEY_CONTRACTS) -> bool:
+        """检查指定 key 的缓存是否存在（不读取数据，轻量）。
+
+        供健康检查等只需判断缓存可用性的场景，避免反序列化整个 parquet。
+        """
+        if self._redis:
+            try:
+                return bool(await self._redis.exists(key))
+            except Exception:
+                logger.exception("Failed to check key existence in Redis")
+        return key in self._local
+
     # ---- 写入 ----
 
     async def set_df(self, df: pd.DataFrame, key_override: str | None = None) -> None:

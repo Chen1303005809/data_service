@@ -19,13 +19,14 @@ logger = logging.getLogger(__name__)
 _PRICE_SCALE = Decimal("10000")
 
 
-def parse_price(price_data: dict) -> dict[str, PriceInfo]:
-    """解析 /price 返回的表格结构为 code → PriceInfo 的映射。
+def parse_price(price_data: dict) -> tuple[dict[str, PriceInfo], dict[str, int]]:
+    """解析 /price 返回的表格结构为 (code → PriceInfo, code → main_flag)。
 
     price_data 结构:
         {"fields": [...], "depth": [[...], ...]}
 
-    每个 depth 行按 fields 顺序排列。
+    每个 depth 行按 fields 顺序排列。返回值第二个元素是主力标志映射，
+    由 merge 阶段回填到 InsInfo（属于合约属性，不放 PriceInfo）。
     """
     fields: list[str] = price_data.get("fields", [])
     depth: list[list] = price_data.get("depth", [])
@@ -36,6 +37,7 @@ def parse_price(price_data: dict) -> dict[str, PriceInfo]:
     fetched_at = datetime.now(CST)
 
     result: dict[str, PriceInfo] = {}
+    main_flags: dict[str, int] = {}
     for row in depth:
         if not row:
             continue
@@ -101,24 +103,11 @@ def parse_price(price_data: dict) -> dict[str, PriceInfo]:
             fetched_at=fetched_at,
         )
 
-        # 主力标志不放在 PriceInfo 里（属于合约属性），通过单独的返回值传回
-        # 这里用 _main_flags 字典在 merge 阶段回填到 InsInfo
-        if not hasattr(parse_price, "_main_flags"):
-            parse_price._main_flags: dict[str, int] = {}  # type: ignore[attr-defined]
-        parse_price._main_flags[code] = main_flag  # type: ignore[attr-defined]
+        # 主力标志属于合约属性，单独收集后随返回值传回 merge 阶段回填到 InsInfo
+        main_flags[code] = main_flag
 
     logger.info("Parsed %d price records from /price", len(result))
-    return result
-
-
-def get_main_flags() -> dict[str, int]:
-    """获取解析出的主力标志映射 {code: main_flag}。"""
-    return getattr(parse_price, "_main_flags", {})
-
-
-def reset_main_flags() -> None:
-    """重置主力标志缓存（每次新解析前调用）。"""
-    parse_price._main_flags = {}  # type: ignore[attr-defined]
+    return result, main_flags
 
 
 # ---------------------------------------------------------------------------

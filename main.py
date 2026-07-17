@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -58,14 +59,21 @@ async def lifespan(app: FastAPI):
     config.validate()
     await cache_client.connect()
 
-    # 冷启动：分别同步合约和现货
-    logger.info("Cold-start: syncing contracts...")
-    cnt = await fetch_contracts_and_sync()
+    # 冷启动：并发同步合约和现货（任一失败不阻塞另一个）
+    logger.info("Cold-start: syncing contracts and spot concurrently...")
+    cnt, spt = await asyncio.gather(
+        fetch_contracts_and_sync(),
+        fetch_spot_and_sync(),
+        return_exceptions=True,
+    )
+    if isinstance(cnt, Exception):
+        logger.error("Cold-start: contracts sync raised: %s", cnt)
+        cnt = -1
+    if isinstance(spt, Exception):
+        logger.error("Cold-start: spot sync raised: %s", spt)
+        spt = -1
     if cnt < 0 and await cache_client.get_df("contracts:latest") is None:
         logger.warning("Cold-start: contracts sync failed")
-
-    logger.info("Cold-start: syncing spot...")
-    spt = await fetch_spot_and_sync()
     if spt < 0 and await cache_client.get_df("spot:latest") is None:
         logger.warning("Cold-start: spot sync failed (akshare data may be unavailable)")
 

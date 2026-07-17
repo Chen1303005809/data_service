@@ -42,6 +42,10 @@ class Config:
     spot_refresh_interval_seconds: int = field(
         default_factory=lambda: int(os.getenv("SPOT_REFRESH_INTERVAL_SECONDS", "14400"))
     )
+    # 合约实时拉取（兜底）的最大重试次数（不含首次），指数退避 0.1s * 2^n
+    contracts_max_retries: int = field(
+        default_factory=lambda: int(os.getenv("CONTRACTS_MAX_RETRIES", "2"))
+    )
     # 分页
     max_limit: int = field(
         default_factory=lambda: int(os.getenv("MAX_LIMIT", "500"))
@@ -72,9 +76,13 @@ class Config:
     kline_tcp_timeout: int = field(
         default_factory=lambda: int(os.getenv("KLINE_TCP_TIMEOUT", "10"))
     )
-    # TCP 网络瞬时故障的最大重试次数（不含首次请求），指数退避 0.1s * 2^n
+    # TCP 网络瞬时故障的最大重试次数（不含首次请求），指数退避 base * 2^n + jitter
     kline_tcp_max_retries: int = field(
         default_factory=lambda: int(os.getenv("KLINE_TCP_MAX_RETRIES", "3"))
+    )
+    # 指数退避基准间隔（秒），实际延迟 = base * 2^attempt + uniform(0, base)
+    kline_tcp_retry_base_delay: float = field(
+        default_factory=lambda: float(os.getenv("KLINE_TCP_RETRY_BASE_DELAY", "1.0"))
     )
 
     def validate(self) -> None:
@@ -93,6 +101,8 @@ class Config:
             raise ValueError("MAX_LIMIT must be positive")
         if self.default_limit <= 0 or self.default_limit > self.max_limit:
             raise ValueError("DEFAULT_LIMIT must be between 1 and MAX_LIMIT")
+        if self.contracts_max_retries < 0:
+            raise ValueError("CONTRACTS_MAX_RETRIES must be >= 0")
 
 
 # 全局单例

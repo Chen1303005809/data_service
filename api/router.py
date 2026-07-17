@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 import json
 from pydantic import ValidationError
 
+from cache.redis_client import CACHE_KEY_SPOT, cache_client
 from config import config
 from engine.filter import DataUnavailableError, query as run_query
 from kline.client import (
@@ -80,9 +81,33 @@ async def get_contracts(
 
 
 @router.get("/health", summary="健康检查")
-async def health() -> dict[str, str]:
-    """简单健康检查端点。"""
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    """健康检查：合约缓存可用则 200，否则 503。"""
+    contracts_ok = await cache_client.exists()
+    spot_ok = await cache_client.exists(CACHE_KEY_SPOT)
+
+    scheduler_running: bool | None = None
+    try:
+        from main import scheduler
+        scheduler_running = scheduler.running
+    except Exception:
+        pass
+
+    checks = {
+        "redis": "up" if cache_client.redis_available else "down(local_cache)",
+        "contracts_cache": "ok" if contracts_ok else "empty",
+        "spot_cache": "ok" if spot_ok else "empty",
+        "scheduler": (
+            "running" if scheduler_running
+            else "stopped" if scheduler_running is False
+            else "unknown"
+        ),
+    }
+    healthy = contracts_ok
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={"status": "ok" if healthy else "unavailable", "checks": checks},
+    )
 
 
 @router.get(
@@ -128,13 +153,29 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
         resp.warning = warning_from_symbol(normalize_symbol(params.symbol))
         return resp
     except RemoteError as e:
+        logger.warning(
+            "kline remote error symbol=%s range=%s..%s cycle=%d code=%s msg=%s",
+            params.symbol, start, end, params.cycle_type, e.code, e.message,
+        )
         raise HTTPException(
             status_code=502,
             detail=f"Remote server error [{e.code}]: {e.message}",
         )
     except ConnectionTimeoutError as e:
+        logger.error(
+            "kline timeout symbol=%s range=%s..%s cycle=%d err=%s",
+            params.symbol, start, end, params.cycle_type, e,
+        )
         raise HTTPException(status_code=504, detail=str(e))
     except (KlineConnectionError, ProtocolError) as e:
+        logger.error(
+            "kline %s symbol=%s range=%s..%s cycle=%d err=%s",
+            type(e).__name__, params.symbol, start, end, params.cycle_type, e,
+        )
         raise HTTPException(status_code=502, detail=str(e))
     except KlineError as e:
+        logger.error(
+            "kline %s symbol=%s range=%s..%s cycle=%d err=%s",
+            type(e).__name__, params.symbol, start, end, params.cycle_type, e,
+        )
         raise HTTPException(status_code=500, detail=str(e))
