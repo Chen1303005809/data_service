@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -13,15 +13,15 @@ class KlineQueryParams(BaseModel):
     """K 线查询参数（来自路由查询参数）。"""
 
     symbol: str = Field(..., description="合约代码", min_length=1)
-    start_date: str | None = Field(
-        default=None,
-        pattern=r"^\d{8}$",
-        description="开始日期 YYYYMMDD",
+    qrynum: int = Field(
+        default=400,
+        ge=1,
+        description="查询根数（从结束日期往前取 N 根 K 线）",
     )
     end_date: str | None = Field(
         default=None,
         pattern=r"^\d{8}$",
-        description="结束日期 YYYYMMDD",
+        description="结束日期 YYYYMMDD；不传则默认今天",
     )
     cycle_type: int = Field(
         default=3,
@@ -29,15 +29,10 @@ class KlineQueryParams(BaseModel):
         le=14,
         description="K 线周期: 1=分, 2=时, 3=日, 4=周, 5=月, …",
     )
-    kline_type: int = Field(default=1, ge=1, description="K 线类型")
 
-    def resolve_dates(self) -> tuple[str, str]:
-        """解析实际起止日期（补全 None 默认值），返回 (YYYYMMDD, YYYYMMDD)。"""
-        now = datetime.now(CST)
-        end = self.end_date or now.strftime("%Y%m%d")
-        end_dt = datetime.strptime(end, "%Y%m%d")
-        start = self.start_date or (end_dt - timedelta(days=7)).strftime("%Y%m%d")
-        return start, end
+    def resolve_end_date(self) -> str:
+        """解析实际结束日期（不传则默认今天），返回 YYYYMMDD。"""
+        return self.end_date or datetime.now(CST).strftime("%Y%m%d")
 
 
 class KlineItem(BaseModel):

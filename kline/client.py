@@ -20,7 +20,7 @@ import zlib
 from config import config
 
 END_OF_PACKAGE = 0x03
-FUNCID_KLINE = 1002
+FUNCID_KLINE = 1003
 PROTOCOL_VERSION = 2
 
 # 单包帧结构：header(8) + body(length) + xor(1) + end(1)

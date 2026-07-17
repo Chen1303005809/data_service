@@ -20,7 +20,7 @@ from kline.client import (
 )
 
 END = 0x03
-FUNCID = 1002
+FUNCID = 1003
 
 
 def _build_frame(reqid: int, currseq: int, maxseq: int, fragment: bytes,

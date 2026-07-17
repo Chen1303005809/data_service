@@ -116,31 +116,17 @@ async def health() -> JSONResponse:
     summary="查询 K 线历史数据",
 )
 async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
-    """查询期货 K 线历史数据。默认返回日线。"""
-    from datetime import datetime
-
-    date_format = "%Y%m%d"
-    start, end = params.resolve_dates()
-
-    # 日期范围校验
-    start_dt = datetime.strptime(start, date_format)
-    end_dt = datetime.strptime(end, date_format)
-    if start_dt > end_dt:
-        raise HTTPException(
-            status_code=422,
-            detail="start_date must not be later than end_date",
-        )
+    """查询期货 K 线历史数据。从结束日期往前取指定根数，默认返回日线。"""
+    end = params.resolve_end_date()
 
     request_body = {
         "GlobalID": 0,
         "ExchangeID": "",
         "InstrumentID": normalize_symbol(params.symbol),
+        "QryNum": params.qrynum,
         "CycleType": params.cycle_type,
-        "StartDate": int(start),
-        "StartTime": 0,
         "EndDate": int(end),
         "EndTime": 0,
-        "KLineType": params.kline_type,
     }
     try:
         raw = await kline_client.fetch(request_body)
@@ -149,8 +135,8 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
         return resp
     except RemoteError as e:
         logger.warning(
-            "kline remote error symbol=%s range=%s..%s cycle=%d code=%s msg=%s",
-            params.symbol, start, end, params.cycle_type, e.code, e.message,
+            "kline remote error symbol=%s end=%s qrynum=%d cycle=%d code=%s msg=%s",
+            params.symbol, end, params.qrynum, params.cycle_type, e.code, e.message,
         )
         raise HTTPException(
             status_code=502,
@@ -158,26 +144,26 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
         )
     except ConnectionTimeoutError as e:
         logger.error(
-            "kline timeout symbol=%s range=%s..%s cycle=%d err=%s",
-            params.symbol, start, end, params.cycle_type, e,
+            "kline timeout symbol=%s end=%s qrynum=%d cycle=%d err=%s",
+            params.symbol, end, params.qrynum, params.cycle_type, e,
         )
         raise HTTPException(status_code=504, detail=str(e))
     except (KlineConnectionError, ProtocolError) as e:
         logger.error(
-            "kline %s symbol=%s range=%s..%s cycle=%d err=%s",
-            type(e).__name__, params.symbol, start, end, params.cycle_type, e,
+            "kline %s symbol=%s end=%s qrynum=%d cycle=%d err=%s",
+            type(e).__name__, params.symbol, end, params.qrynum, params.cycle_type, e,
         )
         raise HTTPException(status_code=502, detail=str(e))
     except KlineError as e:
         logger.error(
-            "kline %s symbol=%s range=%s..%s cycle=%d err=%s",
-            type(e).__name__, params.symbol, start, end, params.cycle_type, e,
+            "kline %s symbol=%s end=%s qrynum=%d cycle=%d err=%s",
+            type(e).__name__, params.symbol, end, params.qrynum, params.cycle_type, e,
         )
         raise HTTPException(status_code=500, detail=str(e))
     except ValidationError as e:
         logger.error(
-            "kline validation error symbol=%s range=%s..%s cycle=%d err=%s",
-            params.symbol, start, end, params.cycle_type, e,
+            "kline validation error symbol=%s end=%s qrynum=%d cycle=%d err=%s",
+            params.symbol, end, params.qrynum, params.cycle_type, e,
         )
         raise HTTPException(
             status_code=502,

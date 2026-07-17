@@ -6,11 +6,9 @@ Requets:
   "ExchangeID": "",         // [string] 交易所 ID，期货合约名不同可为空
   "InstrumentID": "AP8888", // [string] 合约名 (若查询主连则为品种名后加 8888)
   "CycleType": 1,           // [number] K线周期类型 (见下方枚举说明)
-  "StartDate": 20260101,    // [number] 开始日期 (交易日，格式: YYYYMMDD)
-  "StartTime": 0,           // [number] 开始时间 (格式: HHMMSS, 24小时制, 默认0)
+  "QryNum": 400,            // [number] 查询根数 (从结束日期往前取 N 根 K 线)
   "EndDate": 20260102,      // [number] 结束日期 (交易日，格式: YYYYMMDD)
-  "EndTime": 0,             // [number] 结束时间 (格式: HHMMSS, 24小时制, 默认0)
-  "KLineType": 1            // [number] K线类型
+  "EndTime": 0              // [number] 结束时间 (格式: HHMMSS, 24小时制, 默认0)
 }
 ```
 > 附：CycleType 枚举说明
