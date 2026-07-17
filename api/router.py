@@ -116,7 +116,7 @@ async def health() -> JSONResponse:
     summary="查询 K 线历史数据",
 )
 async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
-    """查询期货 K 线历史数据。默认返回日线，最多往前一周。"""
+    """查询期货 K 线历史数据。默认返回日线。"""
     from datetime import datetime
 
     date_format = "%Y%m%d"
@@ -129,11 +129,6 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
         raise HTTPException(
             status_code=422,
             detail="start_date must not be later than end_date",
-        )
-    if (end_dt - start_dt).days > 7:
-        raise HTTPException(
-            status_code=422,
-            detail="date range must not exceed 7 days",
         )
 
     request_body = {
