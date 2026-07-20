@@ -126,7 +126,11 @@ async def get_kline(params: KlineQueryParams = Depends()) -> KlineResponse:
         "QryNum": params.qrynum,
         "CycleType": params.cycle_type,
         "EndDate": int(end),
-        "EndTime": 0,
+        # EndTime 必须给具体的当天时刻：EndDate=今天 + EndTime=0 会让
+        # 服务端进入"等待当日数据"的挂起状态，不返回完整响应直至读超时
+        # （报 response incomplete）。查历史日期时 EndTime=0 无害，但统一
+        # 传 235959（含当天全天）对历史/今天都安全。
+        "EndTime": 235959,
     }
     try:
         raw = await kline_client.fetch(request_body)
