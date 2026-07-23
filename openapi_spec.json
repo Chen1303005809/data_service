@@ -1,0 +1,447 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "合约数据服务 API",
+    "description": "为 DIFY 工具节点提供期货/期权/现货数据查询，包含 K 线历史、合约行情筛选、现货基差历史。",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "本地开发服务"
+    }
+  ],
+  "paths": {
+    "/api/contracts": {
+      "get": {
+        "summary": "查询合约与现货行情数据",
+        "description": "查询期货/期权/现货的实时行情，支持多维度筛选、排序和分页。通过 product_type 参数选择查询范围：future（期货）、option（期权）、spot（现货），多值 OR 匹配。",
+        "operationId": "queryContracts",
+        "parameters": [
+          {
+            "name": "product_type",
+            "in": "query",
+            "description": "产品类型筛选（多值 OR）：option / future / spot。不传或为空则仅查期货",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["option", "future", "spot"]
+              },
+              "example": ["future", "option"]
+            },
+            "explode": true
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "description": "合约代码列表，模糊匹配（支持多值 OR）。例：code=RB&code=CU 匹配螺纹钢和铜",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "example": ["RB", "CU"]
+            },
+            "explode": true
+          },
+          {
+            "name": "underlying",
+            "in": "query",
+            "description": "标的物代码（精确匹配，大小写不敏感）。例：AP 查询苹果所有合约",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "AP"
+            }
+          },
+          {
+            "name": "option_type",
+            "in": "query",
+            "description": "C（看涨）/ P（看跌），仅期权有效。大小写不敏感",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["C", "P"]
+            }
+          },
+          {
+            "name": "strike_ge",
+            "in": "query",
+            "description": "行权价 >= ，仅期权有效",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "example": 8000
+            }
+          },
+          {
+            "name": "strike_le",
+            "in": "query",
+            "description": "行权价 <= ，仅期权有效",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "example": 10000
+            }
+          },
+          {
+            "name": "expiry_ge",
+            "in": "query",
+            "description": "到期日 >= (YYYY-MM-DD)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-12-01"
+            }
+          },
+          {
+            "name": "expiry_le",
+            "in": "query",
+            "description": "到期日 <= (YYYY-MM-DD)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2027-06-30"
+            }
+          },
+          {
+            "name": "price_ge",
+            "in": "query",
+            "description": "最新价 >= ",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "example": 5000
+            }
+          },
+          {
+            "name": "price_le",
+            "in": "query",
+            "description": "最新价 <= ",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "example": 20000
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "排序：price_asc/desc, strike_asc/desc, expiry_asc/desc（大小写与分隔符不敏感）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "price_desc"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "返回条数上限",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50,
+              "example": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "分页偏移",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "example": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "查询成功，返回合约行情列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "description": "匹配总数"
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "返回条数上限"
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "description": "分页偏移"
+                    },
+                    "cached_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "数据缓存时间"
+                    },
+                    "stale": {
+                      "type": "boolean",
+                      "description": "缓存是否过期"
+                    },
+                    "items": {
+                      "type": "array",
+                      "description": "合约条目列表",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ins": {
+                            "type": "object",
+                            "description": "合约基础信息",
+                            "properties": {
+                              "code": { "type": "string", "description": "合约代码" },
+                              "underlying": { "type": "string", "description": "品种代码" },
+                              "underlying_name": { "type": "string", "description": "品种名称" },
+                              "exchange": { "type": "string", "description": "交易所" },
+                              "product_type": { "type": "string", "description": "产品类型：option / future / spot" },
+                              "expiry": { "type": "string", "description": "到期日 YYYY-MM-DD" },
+                              "list_date": { "type": "string", "description": "上市日 YYYY-MM-DD" },
+                              "option_type": { "type": "string", "description": "C（看涨）/ P（看跌），期货为空" },
+                              "strike": { "type": "number", "description": "行权价，期货为 0" },
+                              "contract_multiplier": { "type": "integer", "description": "合约乘数" },
+                              "tick_size": { "type": "number", "description": "最小变动价" },
+                              "main_flag": { "type": "integer", "description": "主力标志：0=普通, 1=主力, 2=次主力" }
+                            }
+                          },
+                          "price": {
+                            "type": "object",
+                            "description": "实时行情信息",
+                            "properties": {
+                              "last_price": { "type": "number", "description": "最新价" },
+                              "open": { "type": "number", "description": "开盘价" },
+                              "high": { "type": "number", "description": "最高价" },
+                              "low": { "type": "number", "description": "最低价" },
+                              "pre_close": { "type": "number", "description": "昨收" },
+                              "pre_settle": { "type": "number", "description": "昨结" },
+                              "settle": { "type": "number", "description": "结算价" },
+                              "avg_price": { "type": "number", "description": "均价" },
+                              "change": { "type": "number", "description": "涨跌额 = 最新价 - 昨收" },
+                              "volume": { "type": "integer", "description": "成交量" },
+                              "turnover": { "type": "number", "description": "成交额" },
+                              "open_interest": { "type": "integer", "description": "今持仓" },
+                              "trade_date": { "type": "string", "description": "交易日 YYYY-MM-DD" },
+                              "near_basis": { "type": "number", "description": "近月基差（现货专用）" },
+                              "dom_basis": { "type": "number", "description": "主力基差（现货专用）" }
+                            }
+                          },
+                          "warning": {
+                            "type": "string",
+                            "description": "到期警告（近月合约提醒）"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败"
+          },
+          "503": {
+            "description": "数据暂不可用"
+          }
+        }
+      }
+    },
+    "/api/kline": {
+      "get": {
+        "summary": "查询 K 线历史数据",
+        "description": "查询期货 K 线历史数据。从结束日期往前取指定根数，默认返回日线 400 根。",
+        "operationId": "queryKline",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "description": "合约代码，如 AP610、ag2507、CU2609",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "AP610"
+            }
+          },
+          {
+            "name": "qrynum",
+            "in": "query",
+            "description": "查询根数（从结束日期往前取 N 根 K 线）",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 400,
+              "example": 100
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "结束日期 YYYYMMDD；不传则默认今天",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{8}$",
+              "example": "20260722"
+            }
+          },
+          {
+            "name": "cycle_type",
+            "in": "query",
+            "description": "K 线周期：1=1分钟, 2=1小时, 3=日, 4=周, 5=月",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 14,
+              "default": 3,
+              "example": 3
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "K 线数据查询成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "Ins": { "type": "string", "description": "合约代码" },
+                    "Ty": { "type": "integer", "description": "K 线周期" },
+                    "Req": { "type": "integer", "description": "请求 ID" },
+                    "GID": { "type": "integer", "description": "全局 ID" },
+                    "EID": { "type": "string", "description": "交易所 ID" },
+                    "SD": { "type": "integer", "description": "起始日期" },
+                    "ST": { "type": "integer", "description": "起始时间" },
+                    "ED": { "type": "integer", "description": "结束日期" },
+                    "ET": { "type": "integer", "description": "结束时间" },
+                    "data": {
+                      "type": "array",
+                      "description": "K 线数据列表",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "TiD": { "type": "string", "description": "交易日" },
+                          "TeD": { "type": "string", "description": "自然日" },
+                          "T": { "type": "string", "description": "时间" },
+                          "O": { "type": "number", "description": "开盘价" },
+                          "H": { "type": "number", "description": "最高价" },
+                          "L": { "type": "number", "description": "最低价" },
+                          "C": { "type": "number", "description": "收盘价" },
+                          "OI": { "type": "integer", "description": "持仓量" },
+                          "V": { "type": "integer", "description": "成交量" },
+                          "VD": { "type": "integer", "description": "成交量之差（与上一笔）" },
+                          "A": { "type": "number", "description": "成交额" }
+                        }
+                      }
+                    },
+                    "warning": { "type": "string", "description": "到期提醒" }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游服务错误或响应解析失败"
+          },
+          "504": {
+            "description": "请求超时"
+          }
+        }
+      }
+    },
+    "/api/spot/history": {
+      "get": {
+        "summary": "查询现货历史基差",
+        "description": "查询指定品种近 days 天的现货价格及基差历史。使用 akshare futures_spot_price_daily 获取连续交易日的基差数据。",
+        "operationId": "querySpotHistory",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "description": "品种代码，如 CU（铜）、LH（生猪）、RB（螺纹钢）",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "LH"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "追溯自然日天数（约 10 个交易日）。当 date 参数不传时生效。范围 5～60",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 60,
+              "default": 14,
+              "example": 14
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "description": "精确日期 'YYYYMMDD' 或 'latest'（最近交易日）。传此参数时忽略 days",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{8}|latest$",
+              "example": "20260721"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "现货历史基差查询成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "symbol": { "type": "string", "description": "品种代码" },
+                    "days": { "type": "integer", "description": "追溯自然日天数" },
+                    "cached_at": { "type": "string", "description": "查询时间" },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "date": { "type": "string", "description": "交易日 YYYYMMDD" },
+                          "spot_price": { "type": "number", "description": "现货价格" },
+                          "near_contract": { "type": "string", "description": "近月合约代码" },
+                          "near_contract_price": { "type": "number", "description": "近月合约结算价" },
+                          "dominant_contract": { "type": "string", "description": "主力合约代码" },
+                          "dominant_contract_price": { "type": "number", "description": "主力合约结算价" },
+                          "near_basis": { "type": "number", "description": "近月基差（现货价 - 近月合约价）" },
+                          "dom_basis": { "type": "number", "description": "主力基差（现货价 - 主力合约价）" },
+                          "near_basis_rate": { "type": "number", "description": "近月基差率" },
+                          "dom_basis_rate": { "type": "number", "description": "主力基差率" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

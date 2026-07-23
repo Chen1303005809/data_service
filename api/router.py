@@ -1,16 +1,18 @@
-"""API 路由：GET /api/contracts, GET /api/kline。"""
+"""API 路由：GET /api/contracts, GET /api/kline, GET /api/spot/history。"""
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-import json
 from pydantic import ValidationError
 
 from cache.redis_client import CACHE_KEY_SPOT, cache_client
-from config import config
+from config import CST, config
 from engine.filter import DataUnavailableError, query as run_query
 from kline.client import (
     ConnectionError as KlineConnectionError,
@@ -24,14 +26,8 @@ from kline.models import KlineQueryParams, KlineResponse
 from kline.symbol_normalizer import normalize_symbol
 from engine.expiry_warning import warning_from_symbol
 from models.schemas import ProductType, QueryParams, QueryResponse
-
-# 新增
-from datetime import datetime
-import asyncio
 from spot.client import fetch_spot_history
 from spot.models import SpotHistoryItem, SpotHistoryQueryParams, SpotHistoryResponse
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +83,7 @@ async def get_contracts(
             content={"detail": "Data temporarily unavailable. Please retry later."},
         )
 
+
 @router.get(
     "/api/spot/history",
     response_model=SpotHistoryResponse,
@@ -99,14 +96,13 @@ async def get_spot_history(
 
     使用 akshare futures_spot_price_daily 获取连续交易日的基差数据。
     """
-    records = await asyncio.to_thread(fetch_spot_history, params.symbol.upper(), params.days)
+    records = await asyncio.to_thread(fetch_spot_history, params.symbol.upper(), params.days, params.date)
     return SpotHistoryResponse(
         symbol=params.symbol.upper(),
         days=params.days,
         cached_at=datetime.now(CST).isoformat(),
         items=[SpotHistoryItem(**r) for r in records] if records else [],
     )
-
 
 
 @router.get("/health", summary="健康检查")

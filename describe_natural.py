@@ -53,7 +53,10 @@ def describe(data: Any, max_items: int = 10) -> str:
         ):
             return _describe_contracts(data, max_items)
 
-    return "无法识别的数据类型，请传入 K 线数据或合约数据。"
+    if "symbol" in data and "items" in data and isinstance(data.get("items"), list):
+        return _describe_spot_history(data, max_items)
+
+    return "无法识别的数据类型，请传入 K 线数据、合约数据或现货历史数据。"
 
 
 def _describe_kline(data: dict, max_items: int) -> str:
@@ -264,6 +267,106 @@ def _spot_text(ins: dict, price: dict) -> str:
         parts.append(f"，主力基差{sign}{abs(float(dom_basis)):.2f}")
     parts.append("。")
     return "".join(parts)
+
+
+def _spot_text(ins: dict, price: dict) -> str:
+    """描述单条现货快照（/api/contracts?product_type=spot 中单条现货）。"""
+    name = _contract_name(ins)
+    trade_date = price.get("trade_date", "")
+    last = price.get("last_price", 0)
+    near_basis = price.get("near_basis", 0)
+    dom_basis = price.get("dom_basis", 0)
+
+    parts = [f"{name}"]
+    if trade_date:
+        parts.append(f"，交易日{trade_date}")
+    if last:
+        parts.append(f"，最新价{_format_money(last)}元")
+    if near_basis:
+        sign = "正" if near_basis > 0 else "负"
+        parts.append(f"，近月基差{sign}{abs(float(near_basis)):.2f}")
+    if dom_basis:
+        sign = "正" if dom_basis > 0 else "负"
+        parts.append(f"，主力基差{sign}{abs(float(dom_basis)):.2f}")
+    parts.append("。")
+    return "".join(parts)
+
+
+def _describe_spot_history(data: dict, max_items: int) -> str:
+    """描述现货历史基差数据（/api/spot/history 返回格式）。"""
+    symbol = data.get("symbol", "")
+    items = data.get("items") or []
+
+    if len(items) == 1:
+        lines = [f"{symbol}品种"]
+        item = items[0]
+        d = item.get("date", "")
+        if d:
+            lines.append(f"{d}")
+        sp = item.get("spot_price", 0)
+        if sp:
+            lines.append(f"现货价{_format_money(sp)}元")
+        dom = item.get("dominant_contract", "")
+        dom_p = item.get("dominant_contract_price", 0)
+        if dom and dom_p:
+            lines.append(f"，主力{dom}@{_format_money(dom_p)}元")
+        db = item.get("dom_basis", 0)
+        if db:
+            sign = "正" if db > 0 else "负"
+            lines.append(f"，基差{sign}{abs(float(db)):.2f}")
+        lines.append("。")
+        return "".join(lines)
+
+    lines = [f"{symbol}品种现货基差历史，共{len(items)}个交易日数据。"]
+
+    if not items:
+        lines.append("暂无可用数据。")
+        return "".join(lines)
+
+    show = items[:max_items]
+    for idx, item in enumerate(show, 1):
+        parts = [f"第{idx}个交易日：{item.get('date', '')}"]
+        sp = item.get("spot_price", 0)
+        if sp:
+            parts.append(f"，现货价{_format_money(sp)}元")
+        dom = item.get("dominant_contract", "")
+        dom_p = item.get("dominant_contract_price", 0)
+        if dom and dom_p:
+            parts.append(f"，主力合约{dom}@{_format_money(dom_p)}元")
+        near = item.get("near_contract", "")
+        near_p = item.get("near_contract_price", 0)
+        if near and near_p:
+            parts.append(f"，近月合约{near}@{_format_money(near_p)}元")
+        db = item.get("dom_basis", 0)
+        if db:
+            sign = "正" if db > 0 else "负"
+            parts.append(f"，主力基差{sign}{abs(float(db)):.2f}")
+        nb = item.get("near_basis", 0)
+        if nb:
+            sign = "正" if nb > 0 else "负"
+            parts.append(f"，近月基差{sign}{abs(float(nb)):.2f}")
+        parts.append("。")
+        lines.append("".join(parts))
+
+    if len(items) > max_items:
+        lines.append(f"（仅展示前{max_items}条，剩余{len(items) - max_items}条已省略）")
+
+    # 趋势总结
+    spot_prices = [it.get("spot_price", 0) for it in items if it.get("spot_price")]
+    dom_bases = [it.get("dom_basis", 0) for it in items if it.get("dom_basis")]
+    if len(spot_prices) >= 2:
+        first_sp, last_sp = spot_prices[0], spot_prices[-1]
+        diff = last_sp - first_sp
+        if abs(diff) > 0.01:
+            direction = "上涨" if diff > 0 else "下跌"
+            lines.append(f"期间现货{direction}{abs(diff):.2f}元，从{_format_money(first_sp)}到{_format_money(last_sp)}。")
+    if dom_bases:
+        if all(b > 0 for b in dom_bases):
+            lines.append("主力基差始终为正（现货升水），期货贴水。")
+        elif all(b < 0 for b in dom_bases):
+            lines.append("主力基差始终为负（现货贴水），期货升水。")
+
+    return "".join(lines)
 
 
 def _contract_name(ins: dict) -> str:
@@ -497,3 +600,19 @@ if __name__ == "__main__":
     print("【合约数据描述】")
     print("=" * 60)
     print(describe(contracts_data))
+
+    print()
+    print("=" * 60)
+    print("【现货历史基差描述】")
+    print("=" * 60)
+    spot_history_data = {
+        "symbol": "LH",
+        "days": 14,
+        "cached_at": "2026-07-22T10:30:00",
+        "items": [
+            {"date": "20260708", "spot_price": 11050.0, "dominant_contract": "lh2609", "dominant_contract_price": 12245.0, "near_contract": "lh2607", "near_contract_price": 10770.0, "near_basis": -280.0, "dom_basis": 1195.0, "near_basis_rate": -0.025, "dom_basis_rate": 0.108},
+            {"date": "20260714", "spot_price": 11020.0, "dominant_contract": "lh2609", "dominant_contract_price": 12050.0, "near_contract": "lh2607", "near_contract_price": 10900.0, "near_basis": -120.0, "dom_basis": 1030.0, "near_basis_rate": -0.011, "dom_basis_rate": 0.093},
+            {"date": "20260721", "spot_price": 10850.0, "dominant_contract": "lh2609", "dominant_contract_price": 11425.0, "near_contract": "lh2607", "near_contract_price": 10000.0, "near_basis": -850.0, "dom_basis": 575.0, "near_basis_rate": -0.078, "dom_basis_rate": 0.053},
+        ],
+    }
+    print(describe(spot_history_data))
