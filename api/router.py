@@ -25,6 +25,14 @@ from kline.symbol_normalizer import normalize_symbol
 from engine.expiry_warning import warning_from_symbol
 from models.schemas import ProductType, QueryParams, QueryResponse
 
+# 新增
+from datetime import datetime
+import asyncio
+from spot.client import fetch_spot_history
+from spot.models import SpotHistoryItem, SpotHistoryQueryParams, SpotHistoryResponse
+
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["contracts"])
@@ -78,6 +86,27 @@ async def get_contracts(
             status_code=503,
             content={"detail": "Data temporarily unavailable. Please retry later."},
         )
+
+@router.get(
+    "/api/spot/history",
+    response_model=SpotHistoryResponse,
+    summary="查询现货历史基差（近 10 个交易日）",
+)
+async def get_spot_history(
+    params: SpotHistoryQueryParams = Depends(),
+) -> SpotHistoryResponse:
+    """查询指定品种近 days 天的现货价格及基差历史。
+
+    使用 akshare futures_spot_price_daily 获取连续交易日的基差数据。
+    """
+    records = await asyncio.to_thread(fetch_spot_history, params.symbol.upper(), params.days)
+    return SpotHistoryResponse(
+        symbol=params.symbol.upper(),
+        days=params.days,
+        cached_at=datetime.now(CST).isoformat(),
+        items=[SpotHistoryItem(**r) for r in records] if records else [],
+    )
+
 
 
 @router.get("/health", summary="健康检查")
