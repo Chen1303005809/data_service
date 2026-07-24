@@ -226,77 +226,57 @@ def fetch_spot_records() -> Optional[list[dict]]:
 def fetch_spot_history(symbol: str, days: int = 14, date: str | None = None) -> Optional[list[dict]]:
     """获取指定品种的现货历史基差数据。
 
-    两种模式：
-    1. date="latest" → 查询最近一个有数据的交易日（精确单日）
-    2. date="YYYYMMDD" → 查询指定日期，自动回退最多 5 天
-    3. days=N（默认14） → 查询近 N 天连续序列（约 10 个交易日）
-
-    使用 futures_spot_price_daily()，列名为英文，可直接映射。
+    语义：从锚点日期（date）往前追溯 days 天。
+    - date="latest"：先解析为最近有数据的交易日，再往前追溯
+    - date="YYYYMMDD"：从该日往前追溯
+    - date=None（默认）：从今天往前追溯
+    - days=1：精确单日（只查锚点当天）
 
     Args:
         symbol: 品种代码，如 "CU"、"LH"
-        days: 追溯天数（自然日），当 date 参数不传时生效
-        date: 精确日期 "YYYYMMDD" 或 "latest"（最近交易日）。传此参数时忽略 days
+        days: 从锚点往前追溯的天数。默认 14，设为 1 则只查锚点当天
+        date: 锚点日期 "YYYYMMDD"、"latest" 或 None（默认今天）
 
     Returns:
-        按日期升序排列的历史记录列表。单日模式返回 1 条，失败或无数据时返回 None。
+        按日期升序排列的历史记录列表，失败或无数据时返回 None。
     """
     if not HAS_AKSHARE:
         logger.warning("akshare not installed, spot history unavailable")
         return None
 
     try:
-        # ── 精确日期模式 ──
-        if date is not None:
-            if date.lower() == "latest":
-                # 最近交易日，从今天往回找最多 7 天
-                end = datetime.now(CST)
-                for offset in range(_MAX_FALLBACK_DAYS + 1):
-                    ds = (end - timedelta(days=offset)).strftime("%Y%m%d")
-                    df = ak.futures_spot_price_daily(
-                        start_day=ds, end_day=ds, vars_list=[symbol],
-                    )
-                    if df is not None and not df.empty:
-                        break
-                else:
-                    # 兜底 previous
-                    for offset in range(_MAX_FALLBACK_DAYS + 1):
-                        ds = (end - timedelta(days=offset)).strftime("%Y%m%d")
-                        df_prev = ak.futures_spot_price_previous(date=ds)
-                        if df_prev is not None and not df_prev.empty:
-                            df = _convert_previous(df_prev)
-                            # 只保留目标品种
-                            df = df[df["symbol"] == symbol] if df is not None else None
-                            if df is not None and not df.empty:
-                                break
-                    else:
-                        return None
-                if df is None or df.empty:
-                    return None
-                # 只保留目标品种行（daily 模式已指定 vars_list，但 previous 转换后需筛选）
-                if "symbol" in df.columns:
-                    df = df[df["symbol"] == symbol]
-            else:
-                # 精确日期 YYYYMMDD
-                df = ak.futures_spot_price_daily(
-                    start_day=date, end_day=date, vars_list=[symbol],
+        # ── 确定结束日期（锚点） ──
+        if date is not None and date.lower() == "latest":
+            # 解析为最近交易日
+            end_dt = datetime.now(CST)
+            for offset in range(_MAX_FALLBACK_DAYS + 1):
+                ds = (end_dt - timedelta(days=offset)).strftime("%Y%m%d")
+                df_check = ak.futures_spot_price_daily(
+                    start_day=ds, end_day=ds, vars_list=[symbol],
                 )
-                if df is None or df.empty:
-                    logger.warning("No spot data for %s on %s", symbol, date)
-                    return None
-
-        # ── 区间模式（默认） ──
-        else:
-            end = datetime.now(CST)
-            start = end - timedelta(days=days)
-            start_str = start.strftime("%Y%m%d")
-            end_str = end.strftime("%Y%m%d")
-            df = ak.futures_spot_price_daily(
-                start_day=start_str, end_day=end_str, vars_list=[symbol],
-            )
-            if df is None or df.empty:
-                logger.warning("No spot history for %s in [%s, %s]", symbol, start_str, end_str)
+                if df_check is not None and not df_check.empty:
+                    end_str = ds
+                    break
+            else:
                 return None
+        elif date is not None:
+            end_str = date
+        else:
+            end_str = datetime.now(CST).strftime("%Y%m%d")
+
+        # ── 计算起始日期 ──
+        from datetime import timedelta as td
+        end_dt = datetime.strptime(end_str, "%Y%m%d")
+        start_dt = end_dt - td(days=days - 1)
+        start_str = start_dt.strftime("%Y%m%d")
+
+        # ── 拉取数据 ──
+        df = ak.futures_spot_price_daily(
+            start_day=start_str, end_day=end_str, vars_list=[symbol],
+        )
+        if df is None or df.empty:
+            logger.warning("No spot data for %s in [%s, %s]", symbol, start_str, end_str)
+            return None
 
         df = df.sort_values("date")
         records: list[dict] = []
@@ -314,7 +294,8 @@ def fetch_spot_history(symbol: str, days: int = 14, date: str | None = None) -> 
                 "near_basis_rate": float(row.get("near_basis_rate", 0) or 0),
                 "dom_basis_rate": float(row.get("dom_basis_rate", 0) or 0),
             })
-        logger.info("Fetched %d history records for %s", len(records), symbol)
+        logger.info("Fetched %d history records for %s from %s to %s",
+                     len(records), symbol, start_str, end_str)
         return records
     except Exception:
         logger.exception("Failed to fetch spot history for %s", symbol)

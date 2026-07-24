@@ -15,17 +15,18 @@ from config import CST
 class SpotHistoryQueryParams(BaseModel):
     """现货历史查询参数（来自路由查询参数）。
 
-    三种模式：
-    - days=N：查询近 N 天连续序列（默认 14 天）
-    - date="latest"：精确查询最近一个有数据的交易日
-    - date="YYYYMMDD"：精确查询指定日期
+    date 为锚点日期（默认为今天），days 为从锚点往前追溯的天数。
+    - date=latest：先解析为最近交易日，再按 days 往前追溯
+    - date=YYYYMMDD：从该日期往前追溯 days 天
+    - 只传 days：从今天往前追溯
+    - 只传 date：从该日期往前追溯 1 天（即精确单日）
     """
 
     symbol: str = Field(..., description="品种代码，如 CU、LH、RB", min_length=1)
-    days: int = Field(default=14, ge=5, le=60, description="追溯自然日天数（约 10 个交易日）。当 date 参数不传时生效")
+    days: int = Field(default=14, ge=1, le=60, description="从锚点日期往前追溯的自然日天数。设为 1 则仅查锚点当天")
     date: str | None = Field(
         default=None,
-        description="精确日期 'YYYYMMDD' 或 'latest'（最近交易日）。传此参数时忽略 days",
+        description="锚点日期 'YYYYMMDD' 或 'latest'（最近交易日）。不传则默认今天。days 决定从此日期往前追溯多少天",
         pattern=r"^(\d{8}|latest)$",
     )
 

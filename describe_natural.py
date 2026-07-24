@@ -269,27 +269,6 @@ def _spot_text(ins: dict, price: dict) -> str:
     return "".join(parts)
 
 
-def _spot_text(ins: dict, price: dict) -> str:
-    """描述单条现货快照（/api/contracts?product_type=spot 中单条现货）。"""
-    name = _contract_name(ins)
-    trade_date = price.get("trade_date", "")
-    last = price.get("last_price", 0)
-    near_basis = price.get("near_basis", 0)
-    dom_basis = price.get("dom_basis", 0)
-
-    parts = [f"{name}"]
-    if trade_date:
-        parts.append(f"，交易日{trade_date}")
-    if last:
-        parts.append(f"，最新价{_format_money(last)}元")
-    if near_basis:
-        sign = "正" if near_basis > 0 else "负"
-        parts.append(f"，近月基差{sign}{abs(float(near_basis)):.2f}")
-    if dom_basis:
-        sign = "正" if dom_basis > 0 else "负"
-        parts.append(f"，主力基差{sign}{abs(float(dom_basis)):.2f}")
-    parts.append("。")
-    return "".join(parts)
 
 
 def _describe_spot_history(data: dict, max_items: int) -> str:

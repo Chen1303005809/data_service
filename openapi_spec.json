@@ -368,7 +368,7 @@
     "/api/spot/history": {
       "get": {
         "summary": "查询现货历史基差",
-        "description": "查询指定品种近 days 天的现货价格及基差历史。使用 akshare futures_spot_price_daily 获取连续交易日的基差数据。",
+        "description": "查询指定品种的现货价格及基差历史。date 为锚点日期（默认今天），days 为从锚点往前追溯的天数。",
         "operationId": "querySpotHistory",
         "parameters": [
           {
@@ -384,11 +384,11 @@
           {
             "name": "days",
             "in": "query",
-            "description": "追溯自然日天数（约 10 个交易日）。当 date 参数不传时生效。范围 5～60",
+            "description": "从锚点日期往前追溯的自然日天数。设为 1 则仅查锚点当天。范围 1～60",
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 5,
+              "minimum": 1,
               "maximum": 60,
               "default": 14,
               "example": 14
@@ -397,12 +397,12 @@
           {
             "name": "date",
             "in": "query",
-            "description": "精确日期 'YYYYMMDD' 或 'latest'（最近交易日）。传此参数时忽略 days",
+            "description": "锚点日期 'YYYYMMDD' 或 'latest'（最近交易日）。不传则默认今天。days 决定从此日期往前追溯多少天",
             "required": false,
             "schema": {
               "type": "string",
               "pattern": "^\\d{8}|latest$",
-              "example": "20260721"
+              "example": "20260715"
             }
           }
         ],
