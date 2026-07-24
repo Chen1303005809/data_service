@@ -45,7 +45,7 @@ def describe(data: Any, max_items: int = 10) -> str:
         return "无法识别的数据类型，请传入 dict 格式的数据。"
 
     if "Ins" in data and "data" in data:
-        return _describe_kline(data, max_items)
+        return _describe_kline(data)
 
     if "total" in data and "items" in data and isinstance(data.get("items"), list):
         if not data["items"] or (
@@ -54,18 +54,18 @@ def describe(data: Any, max_items: int = 10) -> str:
             return _describe_contracts(data, max_items)
 
     if "symbol" in data and "items" in data and isinstance(data.get("items"), list):
-        return _describe_spot_history(data, max_items)
+        return _describe_spot_history(data)
 
     return "无法识别的数据类型，请传入 K 线数据、合约数据或现货历史数据。"
 
 
-def _describe_kline(data: dict, max_items: int) -> str:
+def _describe_kline(data: dict) -> str:
     items = data.get("data") or []
     total = len(items)
     ins = data.get("Ins", "")
     cycle = _CYCLE_LABELS.get(data.get("Ty", 3), "日")
-    sd = data.get("SD", "")
-    ed = data.get("ED", "")
+    sd = _format_date(data.get("SD", ""))
+    ed = _format_date(data.get("ED", ""))
 
     lines = [f"{ins} 合约{cycle}K线数据，从{sd}到{ed}，共{total}条记录。"]
 
@@ -73,18 +73,15 @@ def _describe_kline(data: dict, max_items: int) -> str:
         lines.append("暂无可用数据。")
         return "".join(lines)
 
-    show = items[:max_items]
-    for idx, item in enumerate(show, 1):
+    for idx, item in enumerate(items, 1):
         lines.append(_kline_item_text(item, idx))
-
-    if total > max_items:
-        lines.append(f"（仅展示前{max_items}条，剩余{total - max_items}条已省略）")
 
     lines.append(_kline_summary(items))
     return "".join(lines)
 
 
 def _kline_item_text(item: dict, idx: int) -> str:
+    d = item.get("TiD", "") or item.get("TeD", "")
     t = item.get("T", "")
     o = item.get("O", 0)
     h = item.get("H", 0)
@@ -93,7 +90,17 @@ def _kline_item_text(item: dict, idx: int) -> str:
     v = item.get("V", 0)
     oi = item.get("OI", 0)
 
-    parts = [f"第{idx}根K线：时间{t}，开盘{o:.2f} 最高{h:.2f} 最低{l:.2f} 收盘{c:.2f}"]
+    head = f"第{idx}根K线："
+    when = []
+    if d:
+        when.append(f"日期{_format_date(d)}")
+    if t:
+        when.append(f"时间{_format_time(t)}")
+    if when:
+        head += " ".join(when) + "，"
+    head += f"开盘{o:.2f} 最高{h:.2f} 最低{l:.2f} 收盘{c:.2f}"
+
+    parts = [head]
 
     diff = c - o
     if abs(diff) > 0.001 and o != 0:
@@ -119,10 +126,10 @@ def _kline_summary(items: list[dict]) -> str:
     lows = [it.get("L", 0) for it in items if it.get("L") is not None]
     total_v = sum(it.get("V", 0) for it in items)
     total_a = sum(it.get("A", 0) for it in items)
-    first_t = items[0].get("T", "")
-    last_t = items[-1].get("T", "")
+    first_date = items[0].get("TiD", "") or items[0].get("TeD", "")
+    last_date = items[-1].get("TiD", "") or items[-1].get("TeD", "")
 
-    parts = [f"区间从{first_t}到{last_t}"]
+    parts = [f"区间从{_format_date(first_date)}到{_format_date(last_date)}"]
     if highs:
         parts.append(f"，最高价{max(highs):.2f}")
     if lows:
@@ -271,7 +278,7 @@ def _spot_text(ins: dict, price: dict) -> str:
 
 
 
-def _describe_spot_history(data: dict, max_items: int) -> str:
+def _describe_spot_history(data: dict) -> str:
     """描述现货历史基差数据（/api/spot/history 返回格式）。"""
     symbol = data.get("symbol", "")
     items = data.get("items") or []
@@ -302,7 +309,7 @@ def _describe_spot_history(data: dict, max_items: int) -> str:
         lines.append("暂无可用数据。")
         return "".join(lines)
 
-    show = items[:max_items]
+    show = items
     for idx, item in enumerate(show, 1):
         parts = [f"第{idx}个交易日：{item.get('date', '')}"]
         sp = item.get("spot_price", 0)
@@ -326,9 +333,6 @@ def _describe_spot_history(data: dict, max_items: int) -> str:
             parts.append(f"，近月基差{sign}{abs(float(nb)):.2f}")
         parts.append("。")
         lines.append("".join(parts))
-
-    if len(items) > max_items:
-        lines.append(f"（仅展示前{max_items}条，剩余{len(items) - max_items}条已省略）")
 
     # 趋势总结
     spot_prices = [it.get("spot_price", 0) for it in items if it.get("spot_price")]
@@ -390,6 +394,30 @@ def _format_datetime(v) -> str:
     elif s.endswith("Z"):
         s = s[:-1]
     return s.strip()
+
+
+def _format_date(v) -> str:
+    """归一为 'YYYY-MM-DD' 带横线。接受 8 位紧凑串、已带横杠串、整数、空值。"""
+    if v is None or v == "":
+        return ""
+    s = str(v).strip()
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return s
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+    return s
+
+
+def _format_time(v) -> str:
+    """把 HHMMSS 紧凑串转成 'HH:MM:SS'。长度不符则原样返回。"""
+    if v is None or v == "":
+        return ""
+    s = str(v).strip()
+    if len(s) == 6 and s.isdigit():
+        return f"{s[:2]}:{s[2:4]}:{s[4:6]}"
+    if len(s) == 4 and s.isdigit():
+        return f"{s[:2]}:{s[2:]}"
+    return s
 
 
 if __name__ == "__main__":
